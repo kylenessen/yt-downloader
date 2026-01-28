@@ -176,6 +176,32 @@ function updateSliderRange() {
     clipDuration.textContent = formatDuration(endTime - startTime);
 }
 
+// Seek helper (debounced for slider scrubbing)
+let seekTimer = null;
+function seekPreview(time) {
+    if (!videoPlayer.src || !Number.isFinite(time)) {
+        return;
+    }
+
+    const clamped = Math.max(0, Math.min(time, duration || time));
+
+    // Pause so the user can land on an exact frame.
+    if (!videoPlayer.paused) {
+        videoPlayer.pause();
+    }
+
+    if (seekTimer) {
+        clearTimeout(seekTimer);
+    }
+    seekTimer = setTimeout(() => {
+        try {
+            videoPlayer.currentTime = clamped;
+        } catch (e) {
+            // ignore seek errors (e.g. not yet ready)
+        }
+    }, 75);
+}
+
 // Show status message
 function showStatus(message, type = 'success') {
     statusMessage.textContent = message;
@@ -292,6 +318,7 @@ startSlider.addEventListener('input', () => {
         startSlider.value = startTime;
     }
     updateSliderRange();
+    seekPreview(startTime);
 });
 
 endSlider.addEventListener('input', () => {
@@ -301,6 +328,7 @@ endSlider.addEventListener('input', () => {
         endSlider.value = endTime;
     }
     updateSliderRange();
+    seekPreview(endTime);
 });
 
 // Trim buttons
