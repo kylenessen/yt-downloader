@@ -2,6 +2,14 @@
 
 A self-contained desktop app for downloading, trimming, and exporting YouTube video clips.
 
+## Background
+
+I am teaching a class at the California Men's Colony this semester, and I needed a way to make my lectures entirely offline (I have no access to internet within the prison). I like to use videos wherever I can in my lectures, and had pieced together a number of scripts and hacky solutions make it work for me. Speaking with some of my colleagues, I got the impression that others would find such a tool useful as well, and so I set out to make this piece of software, which is cross-platform and self-contained. The app is designed to be easy to use and allow for easy download of youtube clips. You can have the audio for narration, but I find it especially useful in replacement of GIFs, where no audio is present, and I can lecture over a video or animation. The trimming tools in particular are helpful for this to get just the section you want for your slides. 
+
+There are a variety of quality options available for export, but everything saves to mp4, which plays nice with PowerPoint. You can set the video to play on click, or automatically with looping behavior, replicating GIFs but at a higher quality and reduced size. 
+
+I recommend using 720p, as most projectors max out at this resolution in my experience. Of course, if you have the resolution, you can go higher. 
+
 ## 📥 Download
 
 | Platform | Download |
