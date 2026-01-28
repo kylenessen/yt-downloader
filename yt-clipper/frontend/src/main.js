@@ -123,7 +123,7 @@ document.querySelector('#app').innerHTML = `
                 <div class="trim-section">
                     <div class="trim-header">
                         <div class="trim-label">Trim</div>
-                        <button class="btn btn-secondary" id="previewBtn">Preview Clip</button>
+                        <button class="btn btn-secondary btn-compact" id="previewBtn">Preview Clip</button>
                     </div>
                     <div class="time-display">
                         <span class="time-value" id="startTimeDisplay">00:00:00</span>
