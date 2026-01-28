@@ -40,21 +40,29 @@ package_app() {
         mv "$SOURCE_APP" "$DEST_APP"
         
         # Bundle FFmpeg
-        cp "$FFMPEG_SOURCE" "$DEST_APP/Contents/Resources/ffmpeg"
-        chmod +x "$DEST_APP/Contents/Resources/ffmpeg"
+        local DEST_FFMPEG="$DEST_APP/Contents/Resources/ffmpeg"
+        cp "$FFMPEG_SOURCE" "$DEST_FFMPEG"
+        chmod +x "$DEST_FFMPEG"
         
-        # Ad-hoc code sign the app (prevents "damaged" error)
         echo "🔏 Code signing (ad-hoc)..."
-        codesign --force --deep --sign - "$DEST_APP"
+        # 1. Sign the nested ffmpeg binary first
+        codesign --force --sign - --options runtime "$DEST_FFMPEG"
         
-        # Remove any quarantine attributes
+        # 2. Sign the main app bundle
+        codesign --force --deep --sign - --options runtime "$DEST_APP"
+        
+        # Verify the signature locally
+        echo "🔍 Verifying signature..."
+        codesign --verify --deep --strict "$DEST_APP" || echo "⚠️ Warning: Signature verification failed"
+        
+        # Remove any quarantine attributes (for local testing)
         xattr -cr "$DEST_APP"
         
         # Create zip
         echo "📦 Creating ${ZIP_NAME}..."
         cd "$BUILD_DIR"
         rm -f "$ZIP_NAME" 2>/dev/null || true
-        zip -r "$ZIP_NAME" "YT Downloader.app"
+        zip -qr "$ZIP_NAME" "YT Downloader.app"
         rm -rf "YT Downloader.app"
         cd "$PROJECT_DIR"
         
