@@ -23,40 +23,48 @@ fi
 cd "$PROJECT_DIR"
 wails build -platform "darwin/amd64,darwin/arm64"
 
-# Rename and bundle FFmpeg into both app variants
-echo "📦 Packaging apps..."
-
-# Apple Silicon (arm64)
-if [ -d "$BUILD_DIR/yt-downloader-arm64.app" ]; then
-    rm -rf "$BUILD_DIR/YT Downloader.app" 2>/dev/null || true
-    mv "$BUILD_DIR/yt-downloader-arm64.app" "$BUILD_DIR/YT Downloader.app"
-    cp "$FFMPEG_SOURCE" "$BUILD_DIR/YT Downloader.app/Contents/Resources/ffmpeg"
-    chmod +x "$BUILD_DIR/YT Downloader.app/Contents/Resources/ffmpeg"
+# Function to package and sign an app
+package_app() {
+    local ARCH=$1
+    local ZIP_NAME=$2
+    local SOURCE_APP="$BUILD_DIR/yt-downloader-${ARCH}.app"
+    local DEST_APP="$BUILD_DIR/YT Downloader.app"
     
-    # Create zip for Apple Silicon
-    echo "📦 Creating Apple Silicon zip..."
-    cd "$BUILD_DIR"
-    rm -f "YT-Downloader-macOS-Apple-Silicon.zip" 2>/dev/null || true
-    zip -r "YT-Downloader-macOS-Apple-Silicon.zip" "YT Downloader.app"
-    rm -rf "YT Downloader.app"
-    cd "$PROJECT_DIR"
-fi
+    if [ -d "$SOURCE_APP" ]; then
+        echo "📦 Packaging ${ARCH} build..."
+        
+        # Remove any existing destination
+        rm -rf "$DEST_APP" 2>/dev/null || true
+        
+        # Rename the app
+        mv "$SOURCE_APP" "$DEST_APP"
+        
+        # Bundle FFmpeg
+        cp "$FFMPEG_SOURCE" "$DEST_APP/Contents/Resources/ffmpeg"
+        chmod +x "$DEST_APP/Contents/Resources/ffmpeg"
+        
+        # Ad-hoc code sign the app (prevents "damaged" error)
+        echo "🔏 Code signing (ad-hoc)..."
+        codesign --force --deep --sign - "$DEST_APP"
+        
+        # Remove any quarantine attributes
+        xattr -cr "$DEST_APP"
+        
+        # Create zip
+        echo "📦 Creating ${ZIP_NAME}..."
+        cd "$BUILD_DIR"
+        rm -f "$ZIP_NAME" 2>/dev/null || true
+        zip -r "$ZIP_NAME" "YT Downloader.app"
+        rm -rf "YT Downloader.app"
+        cd "$PROJECT_DIR"
+        
+        echo "✅ Created $ZIP_NAME"
+    fi
+}
 
-# Intel (amd64)
-if [ -d "$BUILD_DIR/yt-downloader-amd64.app" ]; then
-    rm -rf "$BUILD_DIR/YT Downloader.app" 2>/dev/null || true
-    mv "$BUILD_DIR/yt-downloader-amd64.app" "$BUILD_DIR/YT Downloader.app"
-    cp "$FFMPEG_SOURCE" "$BUILD_DIR/YT Downloader.app/Contents/Resources/ffmpeg"
-    chmod +x "$BUILD_DIR/YT Downloader.app/Contents/Resources/ffmpeg"
-    
-    # Create zip for Intel
-    echo "📦 Creating Intel zip..."
-    cd "$BUILD_DIR"
-    rm -f "YT-Downloader-macOS-Intel.zip" 2>/dev/null || true
-    zip -r "YT-Downloader-macOS-Intel.zip" "YT Downloader.app"
-    rm -rf "YT Downloader.app"
-    cd "$PROJECT_DIR"
-fi
+# Package both architectures
+package_app "arm64" "YT-Downloader-macOS-Apple-Silicon.zip"
+package_app "amd64" "YT-Downloader-macOS-Intel.zip"
 
 # Verify
 echo ""

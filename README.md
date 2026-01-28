@@ -17,13 +17,7 @@ A self-contained desktop app for downloading, trimming, and exporting YouTube vi
 **macOS:**
 1. Download and unzip
 2. Drag `YT Downloader.app` to your Applications folder
-3. **Important:** The app is not signed with an Apple Developer certificate, so macOS will show a warning. To open it:
-   - **Option A (recommended):** Right-click (or Control-click) the app → select "Open" → click "Open" in the dialog
-   - **Option B (if you see "damaged" error):** Open Terminal and run:
-     ```bash
-     xattr -cr "/Applications/YT Downloader.app"
-     ```
-     Then open the app normally.
+3. Right-click (or Control-click) the app → select "Open" → click "Open" in the dialog (first time only)
 
 **Windows:**
 1. Download and unzip
