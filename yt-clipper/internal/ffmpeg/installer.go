@@ -43,9 +43,16 @@ func NewInstaller() (*Installer, error) {
 	return &Installer{cacheDir: cacheDir}, nil
 }
 
-// GetFFmpegPath returns the path to ffmpeg, checking system PATH and cache
+// GetFFmpegPath returns the path to ffmpeg, checking bundled, cache, and system locations
 func (i *Installer) GetFFmpegPath() string {
-	// First check system PATH
+	// First, check for bundled FFmpeg inside the app bundle (macOS)
+	if runtime.GOOS == "darwin" {
+		if bundledPath := i.getBundledFFmpegPath(); bundledPath != "" {
+			return bundledPath
+		}
+	}
+
+	// Check system PATH
 	path, err := exec.LookPath("ffmpeg")
 	if err == nil {
 		return path
@@ -64,6 +71,40 @@ func (i *Installer) GetFFmpegPath() string {
 		return cachedPath
 	}
 
+	// macOS GUI apps don't inherit shell PATH, so check common installation paths
+	if runtime.GOOS == "darwin" {
+		commonPaths := []string{
+			"/opt/homebrew/bin/ffmpeg",   // Apple Silicon Homebrew
+			"/usr/local/bin/ffmpeg",      // Intel Homebrew / manual install
+			"/usr/bin/ffmpeg",            // System install
+		}
+		for _, p := range commonPaths {
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+	}
+
+	return ""
+}
+
+// getBundledFFmpegPath returns the path to FFmpeg bundled inside the .app bundle
+func (i *Installer) getBundledFFmpegPath() string {
+	execPath, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+
+	// The executable is at: MyApp.app/Contents/MacOS/myapp
+	// We want: MyApp.app/Contents/Resources/ffmpeg
+	// So we go up two directories from the executable, then into Resources
+	macosDir := filepath.Dir(execPath)
+	contentsDir := filepath.Dir(macosDir)
+	bundledPath := filepath.Join(contentsDir, "Resources", "ffmpeg")
+
+	if _, err := os.Stat(bundledPath); err == nil {
+		return bundledPath
+	}
 	return ""
 }
 
