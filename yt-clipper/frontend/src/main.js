@@ -26,85 +26,94 @@ document.querySelector('#app').innerHTML = `
         </div>
     </div>
 
-    <!-- URL Input Section -->
-    <div class="container">
-        <div class="url-section">
-            <input type="text" class="url-input" id="urlInput" placeholder="Paste YouTube URL here..." />
-            <button class="btn" id="loadBtn">Load Video</button>
-        </div>
-        <div class="progress-container" id="downloadProgress">
-            <div class="progress-bar">
-                <div class="progress-fill" id="downloadProgressFill"></div>
+    <div class="layout" id="layoutRoot">
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title">Controls</div>
+                <button class="btn btn-secondary sidebar-toggle" id="sidebarToggle" title="Collapse sidebar">⟨</button>
             </div>
-            <div class="progress-text" id="downloadProgressText">Downloading...</div>
-        </div>
-    </div>
 
-    <!-- Video Section -->
-    <div class="video-section" id="videoSection">
-        <div class="container">
-            <div class="video-info">
-                <div class="video-title" id="videoTitle"></div>
-                <div class="video-author" id="videoAuthor"></div>
-            </div>
-            <div class="video-container">
-                <video id="videoPlayer"></video>
-                <div class="player-controls" id="playerControls">
-                    <div class="player-controls-row">
-                        <button class="btn player-btn" id="playPauseBtn" title="Play/Pause">Play</button>
-                        <div class="player-time" id="playbackTime">00:00:00 / 00:00:00</div>
+            <div class="card">
+                <div class="card-title">Source</div>
+                <div class="url-section compact">
+                    <input type="text" class="url-input" id="urlInput" placeholder="Paste YouTube URL..." />
+                    <button class="btn" id="loadBtn">Load</button>
+                </div>
+                <div class="progress-container" id="downloadProgress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="downloadProgressFill"></div>
                     </div>
-                    <input type="range" class="player-scrub" id="playbackSlider" min="0" max="0" value="0" step="0.01" />
+                    <div class="progress-text" id="downloadProgressText">Downloading...</div>
+                </div>
+
+                <div class="thumb-row" id="thumbRow">
+                    <img class="thumbnail" id="thumbnailImg" alt="Video thumbnail" />
+                    <div class="thumb-meta">
+                        <div class="video-title" id="videoTitle"></div>
+                        <div class="video-author" id="videoAuthor"></div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Trim Controls -->
-            <div class="trim-section">
-                <div class="trim-label">Trim Selection</div>
-                <div class="time-display">
-                    <span class="time-value" id="startTimeDisplay">00:00:00</span>
-                    <span class="time-value" id="endTimeDisplay">00:00:00</span>
+            <div class="card export-section" id="exportSection">
+                <div class="card-title">Export</div>
+                <div class="form-group">
+                    <label>Filename</label>
+                    <input type="text" id="filenameInput" placeholder="clip name" />
                 </div>
-                <div class="slider-container">
-                    <div class="slider-track"></div>
-                    <div class="slider-range" id="sliderRange"></div>
-                    <input type="range" id="startSlider" min="0" max="100" value="0" step="0.1" />
-                    <input type="range" id="endSlider" min="0" max="100" value="100" step="0.1" />
+                <div class="form-group">
+                    <label>Output</label>
+                    <div class="directory-select">
+                        <input type="text" id="outputDirInput" readonly placeholder="Select folder..." />
+                        <button class="btn btn-secondary" id="selectDirBtn">Browse</button>
+                    </div>
                 </div>
-                <div class="duration-info">
-                    Clip duration: <span class="clip-duration" id="clipDuration">0:00</span>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="removeAudioCheck" />
+                    <label for="removeAudioCheck">Remove audio</label>
                 </div>
-                <div class="trim-buttons">
-                    <button class="btn btn-secondary" id="previewBtn">Preview Clip</button>
+                <button class="btn export-btn" id="exportBtn">Export</button>
+                <div class="progress-container" id="exportProgress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="exportProgressFill"></div>
+                    </div>
+                    <div class="progress-text" id="exportProgressText">Exporting...</div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Export Section -->
-    <div class="export-section" id="exportSection">
-        <div class="container">
-            <div class="form-group">
-                <label>Filename</label>
-                <input type="text" id="filenameInput" placeholder="Enter filename (without extension)" />
-            </div>
-            <div class="form-group">
-                <label>Output Directory</label>
-                <div class="directory-select">
-                    <input type="text" id="outputDirInput" readonly placeholder="Select output directory..." />
-                    <button class="btn btn-secondary" id="selectDirBtn">Browse</button>
+        <div class="main">
+            <div class="video-section" id="videoSection">
+                <div class="video-container">
+                    <video id="videoPlayer"></video>
+                    <div class="player-controls" id="playerControls">
+                        <div class="player-controls-row">
+                            <button class="btn player-btn" id="playPauseBtn" title="Play/Pause">Play</button>
+                            <div class="player-time" id="playbackTime">00:00:00 / 00:00:00</div>
+                        </div>
+                        <input type="range" class="player-scrub" id="playbackSlider" min="0" max="0" value="0" step="0.01" />
+                    </div>
                 </div>
-            </div>
-            <div class="form-group checkbox-group">
-                <input type="checkbox" id="removeAudioCheck" />
-                <label for="removeAudioCheck">Remove audio</label>
-            </div>
-            <button class="btn export-btn" id="exportBtn">Export Clip</button>
-            <div class="progress-container" id="exportProgress">
-                <div class="progress-bar">
-                    <div class="progress-fill" id="exportProgressFill"></div>
+
+                <div class="trim-section">
+                    <div class="trim-header">
+                        <div class="trim-label">Trim</div>
+                        <button class="btn btn-secondary" id="previewBtn">Preview Clip</button>
+                    </div>
+                    <div class="time-display">
+                        <span class="time-value" id="startTimeDisplay">00:00:00</span>
+                        <span class="time-value" id="endTimeDisplay">00:00:00</span>
+                    </div>
+                    <div class="slider-container">
+                        <div class="slider-track"></div>
+                        <div class="slider-range" id="sliderRange"></div>
+                        <input type="range" id="startSlider" min="0" max="100" value="0" step="0.1" />
+                        <input type="range" id="endSlider" min="0" max="100" value="100" step="0.1" />
+                    </div>
+                    <div class="duration-info">
+                        Clip duration: <span class="clip-duration" id="clipDuration">0:00</span>
+                    </div>
                 </div>
-                <div class="progress-text" id="exportProgressText">Exporting...</div>
             </div>
         </div>
     </div>
@@ -125,6 +134,11 @@ const installFfmpegBtn = document.getElementById('installFfmpeg');
 const ffmpegProgress = document.getElementById('ffmpegProgress');
 const ffmpegProgressFill = document.getElementById('ffmpegProgressFill');
 const ffmpegProgressText = document.getElementById('ffmpegProgressText');
+
+const layoutRoot = document.getElementById('layoutRoot');
+const sidebarToggle = document.getElementById('sidebarToggle');
+const thumbRow = document.getElementById('thumbRow');
+const thumbnailImg = document.getElementById('thumbnailImg');
 
 const videoSection = document.getElementById('videoSection');
 const videoPlayer = document.getElementById('videoPlayer');
@@ -154,6 +168,26 @@ const exportProgressFill = document.getElementById('exportProgressFill');
 const exportProgressText = document.getElementById('exportProgressText');
 
 const statusMessage = document.getElementById('statusMessage');
+
+// Sidebar collapse
+function setSidebarCollapsed(collapsed) {
+    if (collapsed) {
+        layoutRoot.classList.add('sidebar-collapsed');
+        sidebarToggle.textContent = '⟩';
+        sidebarToggle.title = 'Expand sidebar';
+    } else {
+        layoutRoot.classList.remove('sidebar-collapsed');
+        sidebarToggle.textContent = '⟨';
+        sidebarToggle.title = 'Collapse sidebar';
+    }
+    localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+}
+
+sidebarToggle.addEventListener('click', () => {
+    setSidebarCollapsed(!layoutRoot.classList.contains('sidebar-collapsed'));
+});
+
+setSidebarCollapsed(localStorage.getItem('sidebarCollapsed') === '1');
 
 // Format time as HH:MM:SS
 function formatTime(seconds) {
@@ -290,6 +324,12 @@ loadBtn.addEventListener('click', async () => {
         videoTitle.textContent = videoInfo.title;
         videoAuthor.textContent = videoInfo.author;
         filenameInput.value = videoInfo.title;
+        if (videoInfo.thumbnail) {
+            thumbnailImg.src = videoInfo.thumbnail;
+            thumbRow.classList.add('visible');
+        } else {
+            thumbRow.classList.remove('visible');
+        }
 
         // Reset trim controls
         duration = videoInfo.duration;
@@ -507,3 +547,4 @@ EventsOn('ffmpeg:progress', (data) => {
 
 // Initialize
 checkFfmpeg();
+thumbRow.classList.remove('visible');

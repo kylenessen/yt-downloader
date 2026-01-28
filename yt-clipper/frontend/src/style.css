@@ -26,9 +26,9 @@ body {
 }
 
 #app {
-    max-width: 900px;
+    max-width: 1180px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 16px;
 }
 
 h1 {
@@ -41,8 +41,86 @@ h1 {
 .container {
     background: var(--bg-secondary);
     border-radius: var(--border-radius);
-    padding: 20px;
-    margin-bottom: 16px;
+    padding: 16px;
+    margin-bottom: 12px;
+}
+
+/* Layout */
+.layout {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.sidebar {
+    width: 360px;
+    flex: 0 0 auto;
+}
+
+.main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.sidebar-title {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.sidebar-toggle {
+    padding: 6px 10px;
+    font-size: 12px;
+    line-height: 1;
+}
+
+.card {
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius);
+    padding: 14px;
+    margin-bottom: 12px;
+}
+
+.card-title {
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+}
+
+.layout.sidebar-collapsed .sidebar {
+    width: 64px;
+}
+
+.layout.sidebar-collapsed .sidebar-title,
+.layout.sidebar-collapsed .card-title,
+.layout.sidebar-collapsed label,
+.layout.sidebar-collapsed .url-input,
+.layout.sidebar-collapsed .directory-select,
+.layout.sidebar-collapsed .checkbox-group,
+.layout.sidebar-collapsed .export-btn,
+.layout.sidebar-collapsed #downloadProgress,
+.layout.sidebar-collapsed #exportProgress,
+.layout.sidebar-collapsed .thumb-row {
+    display: none;
+}
+
+.layout.sidebar-collapsed .card {
+    padding: 10px;
+}
+
+.layout.sidebar-collapsed .btn {
+    width: 100%;
+    padding: 10px 8px;
 }
 
 /* URL Input Section */
@@ -50,6 +128,11 @@ h1 {
     display: flex;
     gap: 12px;
     margin-bottom: 16px;
+}
+
+.url-section.compact {
+    gap: 8px;
+    margin-bottom: 10px;
 }
 
 .url-input {
@@ -145,10 +228,6 @@ h1 {
     display: block;
 }
 
-.video-info {
-    margin-bottom: 16px;
-}
-
 .video-title {
     font-size: 18px;
     font-weight: 600;
@@ -214,10 +293,22 @@ video {
     margin-bottom: 16px;
 }
 
+.trim-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
 .trim-label {
     font-size: 14px;
     color: var(--text-secondary);
     margin-bottom: 8px;
+}
+
+.trim-header .trim-label {
+    margin-bottom: 0;
 }
 
 .time-display {
@@ -366,6 +457,62 @@ video {
     padding: 14px;
     font-size: 16px;
     margin-top: 8px;
+}
+
+/* Thumbnail row */
+.thumb-row {
+    display: none;
+    gap: 10px;
+    margin-top: 10px;
+    align-items: center;
+}
+
+.thumb-row.visible {
+    display: flex;
+}
+
+.thumbnail {
+    width: 110px;
+    height: 62px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--bg-primary);
+}
+
+.thumb-meta {
+    min-width: 0;
+}
+
+.thumb-meta .video-title {
+    font-size: 14px;
+    margin: 0 0 4px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.thumb-meta .video-author {
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Responsive: stack sidebar on small widths */
+@media (max-width: 980px) {
+    .layout {
+        flex-direction: column;
+    }
+    .sidebar {
+        width: 100%;
+    }
+    .layout.sidebar-collapsed .sidebar {
+        width: 100%;
+    }
+    .layout.sidebar-collapsed .btn {
+        width: auto;
+    }
 }
 
 /* Status Messages */
