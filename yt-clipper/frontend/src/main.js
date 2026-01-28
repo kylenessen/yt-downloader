@@ -14,9 +14,6 @@ let themePreference = 'system';
 
 // Initialize the app
 document.querySelector('#app').innerHTML = `
-    <h1>YouTube Clipper</h1>
-    <button class="icon-btn theme-toggle" id="themeToggle" title="Toggle theme" aria-label="Toggle theme"></button>
-
     <!-- FFmpeg Install Banner -->
     <div class="ffmpeg-banner" id="ffmpegBanner">
         <p>FFmpeg is required for video processing but is not installed.</p>
@@ -45,7 +42,10 @@ document.querySelector('#app').innerHTML = `
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div class="sidebar-title">Controls</div>
-                <button class="btn btn-secondary sidebar-toggle" id="sidebarToggle" title="Collapse sidebar">⟨</button>
+                <div class="sidebar-actions">
+                    <button class="icon-btn theme-toggle" id="themeToggle" title="Toggle theme" aria-label="Toggle theme"></button>
+                    <button class="btn btn-secondary sidebar-toggle" id="sidebarToggle" title="Collapse sidebar">⟨</button>
+                </div>
             </div>
 
             <div class="card">
