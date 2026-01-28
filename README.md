@@ -1,5 +1,7 @@
 # YT Downloader
 
+![YT Downloader screenshot](docs/images/screenshot.png)
+
 ## Background
 
 I teach a class at California Men's Colony, where I have no internet access. I needed a way to make my lectures entirely offline, and I like to use videos wherever I can. I had pieced together a number of scripts and hacky solutions to make it work, but after speaking with colleagues who wanted similar functionality, I set out to build this cross-platform, self-contained app. It's designed to make downloading YouTube clips simple. You can keep the audio for narration, but I find it especially useful as a replacement for GIFs—no audio, just a video or animation I can lecture over. The trimming tools are particularly helpful for extracting just the section you want for your slides.
