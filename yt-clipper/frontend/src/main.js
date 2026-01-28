@@ -48,7 +48,16 @@ document.querySelector('#app').innerHTML = `
                 <div class="video-author" id="videoAuthor"></div>
             </div>
             <div class="video-container">
-                <video id="videoPlayer" controls></video>
+                <video id="videoPlayer"></video>
+                <div class="player-controls" id="playerControls">
+                    <div class="player-controls-row">
+                        <button class="btn btn-secondary player-btn" id="skipBackBtn" title="Back 1s">-1s</button>
+                        <button class="btn player-btn" id="playPauseBtn" title="Play/Pause">Play</button>
+                        <button class="btn btn-secondary player-btn" id="skipForwardBtn" title="Forward 1s">+1s</button>
+                        <div class="player-time" id="playbackTime">00:00:00 / 00:00:00</div>
+                    </div>
+                    <input type="range" class="player-scrub" id="playbackSlider" min="0" max="0" value="0" step="0.01" />
+                </div>
             </div>
 
             <!-- Trim Controls -->
@@ -123,6 +132,11 @@ const ffmpegProgressText = document.getElementById('ffmpegProgressText');
 
 const videoSection = document.getElementById('videoSection');
 const videoPlayer = document.getElementById('videoPlayer');
+const playPauseBtn = document.getElementById('playPauseBtn');
+const skipBackBtn = document.getElementById('skipBackBtn');
+const skipForwardBtn = document.getElementById('skipForwardBtn');
+const playbackSlider = document.getElementById('playbackSlider');
+const playbackTime = document.getElementById('playbackTime');
 const videoTitle = document.getElementById('videoTitle');
 const videoAuthor = document.getElementById('videoAuthor');
 
@@ -164,6 +178,24 @@ function formatDuration(seconds) {
     return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function updatePlaybackControls() {
+    if (!videoPlayer.src) {
+        playPauseBtn.textContent = 'Play';
+        playbackTime.textContent = '00:00:00 / 00:00:00';
+        playbackSlider.max = 0;
+        playbackSlider.value = 0;
+        return;
+    }
+
+    playPauseBtn.textContent = videoPlayer.paused ? 'Play' : 'Pause';
+    const current = Number.isFinite(videoPlayer.currentTime) ? videoPlayer.currentTime : 0;
+    const total = Number.isFinite(duration) ? duration : 0;
+    playbackTime.textContent = `${formatTime(current)} / ${formatTime(total)}`;
+
+    playbackSlider.max = total;
+    playbackSlider.value = Math.min(current, total);
+}
+
 // Update slider range display
 function updateSliderRange() {
     const startPercent = (startTime / duration) * 100;
@@ -196,6 +228,7 @@ function seekPreview(time) {
     seekTimer = setTimeout(() => {
         try {
             videoPlayer.currentTime = clamped;
+            updatePlaybackControls();
         } catch (e) {
             // ignore seek errors (e.g. not yet ready)
         }
@@ -277,6 +310,7 @@ loadBtn.addEventListener('click', async () => {
         endSlider.value = duration;
 
         updateSliderRange();
+        updatePlaybackControls();
 
         // Show sections
         videoSection.classList.add('visible');
@@ -301,13 +335,83 @@ videoPlayer.addEventListener('loadedmetadata', () => {
         endSlider.max = duration;
         endSlider.value = duration;
         updateSliderRange();
+        updatePlaybackControls();
     }
 });
+
+videoPlayer.addEventListener('timeupdate', () => {
+    updatePlaybackControls();
+});
+
+videoPlayer.addEventListener('play', updatePlaybackControls);
+videoPlayer.addEventListener('pause', updatePlaybackControls);
 
 videoPlayer.addEventListener('error', () => {
     const err = videoPlayer.error;
     const code = err ? err.code : 'unknown';
     showStatus(`Video playback failed (code ${code}).`, 'error');
+});
+
+// Playback controls
+playPauseBtn.addEventListener('click', async () => {
+    if (!videoPlayer.src) return;
+    if (videoPlayer.paused) {
+        try {
+            await videoPlayer.play();
+        } catch (e) {
+            showStatus('Unable to play video.', 'error');
+        }
+    } else {
+        videoPlayer.pause();
+    }
+});
+
+skipBackBtn.addEventListener('click', () => {
+    if (!videoPlayer.src) return;
+    seekPreview(Math.max(0, videoPlayer.currentTime - 1));
+});
+
+skipForwardBtn.addEventListener('click', () => {
+    if (!videoPlayer.src) return;
+    seekPreview(Math.min(duration, videoPlayer.currentTime + 1));
+});
+
+let scrubWasPlaying = false;
+playbackSlider.addEventListener('pointerdown', () => {
+    scrubWasPlaying = !videoPlayer.paused;
+    videoPlayer.pause();
+});
+playbackSlider.addEventListener('input', () => {
+    const t = parseFloat(playbackSlider.value);
+    // scrub should feel immediate
+    if (Number.isFinite(t)) {
+        try {
+            videoPlayer.currentTime = t;
+        } catch (e) {
+            // ignore
+        }
+    }
+    updatePlaybackControls();
+});
+playbackSlider.addEventListener('pointerup', async () => {
+    if (scrubWasPlaying) {
+        try {
+            await videoPlayer.play();
+        } catch (e) {
+            // ignore
+        }
+    }
+    scrubWasPlaying = false;
+});
+
+// Click video to toggle play/pause (keeps the video itself clean of overlays)
+videoPlayer.addEventListener('click', () => {
+    if (!videoPlayer.src) return;
+    if (videoPlayer.paused) {
+        videoPlayer.play().catch(() => {});
+    } else {
+        videoPlayer.pause();
+    }
 });
 
 // Slider events

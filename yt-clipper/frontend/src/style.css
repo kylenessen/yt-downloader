@@ -171,6 +171,39 @@ h1 {
 video {
     width: 100%;
     display: block;
+    background: #000;
+}
+
+/* Player Controls (custom; avoids obscuring video) */
+.player-controls {
+    background: rgba(15, 52, 96, 0.92);
+    backdrop-filter: blur(8px);
+    padding: 10px 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.player-controls-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.player-btn {
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+.player-time {
+    margin-left: auto;
+    font-family: 'Monaco', 'Consolas', monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.player-scrub {
+    width: 100%;
+    accent-color: var(--accent);
 }
 
 /* Trim Controls */
@@ -222,7 +255,7 @@ video {
     border-radius: 4px;
 }
 
-input[type="range"] {
+.slider-container input[type="range"] {
     -webkit-appearance: none;
     width: 100%;
     position: absolute;
@@ -232,7 +265,7 @@ input[type="range"] {
     pointer-events: none;
 }
 
-input[type="range"]::-webkit-slider-thumb {
+.slider-container input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     width: 20px;
     height: 20px;
@@ -243,7 +276,7 @@ input[type="range"]::-webkit-slider-thumb {
     border: 3px solid var(--text-primary);
 }
 
-input[type="range"]::-moz-range-thumb {
+.slider-container input[type="range"]::-moz-range-thumb {
     width: 20px;
     height: 20px;
     border-radius: 50%;
