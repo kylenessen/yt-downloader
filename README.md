@@ -4,11 +4,11 @@ A self-contained desktop app for downloading, trimming, and exporting YouTube vi
 
 ## Background
 
-I am teaching a class at the California Men's Colony this semester, and I needed a way to make my lectures entirely offline (I have no access to internet within the prison). I like to use videos wherever I can in my lectures, and had pieced together a number of scripts and hacky solutions make it work for me. Speaking with some of my colleagues, I got the impression that others would find such a tool useful as well, and so I set out to make this piece of software, which is cross-platform and self-contained. The app is designed to be easy to use and allow for easy download of youtube clips. You can have the audio for narration, but I find it especially useful in replacement of GIFs, where no audio is present, and I can lecture over a video or animation. The trimming tools in particular are helpful for this to get just the section you want for your slides. 
+I teach a class at California Men's Colony, where I have no internet access. I needed a way to make my lectures entirely offline, and I like to use videos wherever I can. I had pieced together a number of scripts and hacky solutions to make it work, but after speaking with colleagues who wanted similar functionality, I set out to build this cross-platform, self-contained app. It's designed to make downloading YouTube clips simple. You can keep the audio for narration, but I find it especially useful as a replacement for GIFs—no audio, just a video or animation I can lecture over. The trimming tools are particularly helpful for extracting just the section you want for your slides.
 
-There are a variety of quality options available for export, but everything saves to mp4, which plays nice with PowerPoint. You can set the video to play on click, or automatically with looping behavior, replicating GIFs but at a higher quality and reduced size. 
+Everything exports to MP4, which plays nicely with PowerPoint. You can set videos to play on click or automatically with looping, replicating GIF behavior but at higher quality and smaller file size.
 
-I recommend using 720p, as most projectors max out at this resolution in my experience. Of course, if you have the resolution, you can go higher. 
+I recommend 720p, as most projectors max out at this resolution. Of course, if you have the display for it, you can go higher. 
 
 ## 📥 Download
 
@@ -25,7 +25,15 @@ I recommend using 720p, as most projectors max out at this resolution in my expe
 **macOS:**
 1. Download and unzip
 2. Drag `YT Downloader.app` to your Applications folder
-3. Right-click (or Control-click) the app → select "Open" → click "Open" in the dialog (first time only)
+3. Right-click (or Control-click) the app → select "Open" → click "Open" in the dialog
+
+If you see a message that the app "cannot be opened because the developer cannot be verified":
+1. Open **System Settings** → **Privacy & Security**
+2. Scroll down to the Security section—you should see a message about "YT Downloader" being blocked
+3. Click **Open Anyway**
+4. Enter your password if prompted, then click "Open" in the final dialog
+
+> **Why does this happen?** The app is not signed with an Apple Developer certificate. This is a one-time step; after allowing it once, the app will open normally.
 
 **Windows:**
 1. Download and unzip
