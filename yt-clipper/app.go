@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"yt-clipper/internal/ffmpeg"
 	"yt-clipper/internal/video"
@@ -19,6 +22,10 @@ type App struct {
 	downloader      *youtube.Downloader
 	videoServer     *video.Server
 	ffmpegInstaller *ffmpeg.Installer
+	previewServer   *http.Server
+	previewListener net.Listener
+	previewBaseURL  string
+	previewErr      error
 	tempDir         string
 	currentVideoID  string
 }
@@ -44,6 +51,21 @@ func (a *App) startup(ctx context.Context) {
 		a.videoServer.SetAllowedDir(tempDir)
 	}
 
+	// Start a localhost HTTP server for video preview.
+	// WebKit won't reliably play <video> from the custom "wails://" scheme.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		a.previewErr = err
+		runtime.LogError(ctx, fmt.Sprintf("Failed to start preview server: %v", err))
+	} else {
+		a.previewListener = ln
+		a.previewServer = &http.Server{Handler: a.videoServer}
+		a.previewBaseURL = "http://" + ln.Addr().String()
+		go func() {
+			_ = a.previewServer.Serve(ln)
+		}()
+	}
+
 	// Initialize FFmpeg installer
 	installer, err := ffmpeg.NewInstaller()
 	if err != nil {
@@ -55,6 +77,15 @@ func (a *App) startup(ctx context.Context) {
 
 // shutdown is called when the app is closing
 func (a *App) shutdown(ctx context.Context) {
+	if a.previewServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = a.previewServer.Shutdown(shutdownCtx)
+		cancel()
+	}
+	if a.previewListener != nil {
+		_ = a.previewListener.Close()
+	}
+
 	// Cleanup temp directory
 	if a.tempDir != "" {
 		os.RemoveAll(a.tempDir)
@@ -73,6 +104,13 @@ type VideoInfo struct {
 
 // LoadVideo downloads a YouTube video and returns its info
 func (a *App) LoadVideo(url string) (*VideoInfo, error) {
+	if a.previewBaseURL == "" {
+		if a.previewErr != nil {
+			return nil, fmt.Errorf("preview server failed to start: %w", a.previewErr)
+		}
+		return nil, fmt.Errorf("preview server not available")
+	}
+
 	// Get video info first
 	info, err := a.downloader.GetVideoInfo(a.ctx, url)
 	if err != nil {
@@ -83,7 +121,11 @@ func (a *App) LoadVideo(url string) (*VideoInfo, error) {
 	a.videoServer.ClearVideo()
 
 	// Download video with progress updates
-	videoPath, err := a.downloader.DownloadForPreview(a.ctx, url, a.tempDir, func(progress float64) {
+	ffmpegPath := ""
+	if a.ffmpegInstaller != nil && a.ffmpegInstaller.IsInstalled() {
+		ffmpegPath = a.ffmpegInstaller.GetFFmpegPath()
+	}
+	videoPath, err := a.downloader.DownloadForPreview(a.ctx, url, a.tempDir, ffmpegPath, func(progress float64) {
 		runtime.EventsEmit(a.ctx, "download:progress", progress)
 	})
 	if err != nil {
@@ -102,7 +144,7 @@ func (a *App) LoadVideo(url string) (*VideoInfo, error) {
 		Author:    info.Author,
 		Duration:  info.Duration,
 		Thumbnail: info.Thumbnail,
-		VideoURL:  a.videoServer.GetCurrentVideoURL(),
+		VideoURL:  a.previewBaseURL + a.videoServer.GetCurrentVideoURL(),
 	}, nil
 }
 
@@ -138,18 +180,10 @@ func (a *App) ExportClip(opts ExportOptions) error {
 	}
 
 	// Get current video path from server
-	videoURL := a.videoServer.GetCurrentVideoURL()
-	if videoURL == "" {
+	inputPath := a.videoServer.GetCurrentVideoPath()
+	if inputPath == "" {
 		return fmt.Errorf("no video loaded")
 	}
-
-	// Find the input video path
-	inputPath := filepath.Join(a.tempDir, fmt.Sprintf("*.mp4"))
-	matches, err := filepath.Glob(inputPath)
-	if err != nil || len(matches) == 0 {
-		return fmt.Errorf("video file not found")
-	}
-	inputPath = matches[0]
 
 	// Build output path
 	filename := opts.Filename
@@ -165,7 +199,7 @@ func (a *App) ExportClip(opts ExportOptions) error {
 	processor := ffmpeg.NewProcessor(a.ffmpegInstaller.GetFFmpegPath())
 
 	// Export with progress
-	err = processor.TrimVideoWithProgress(a.ctx, ffmpeg.TrimOptions{
+	err := processor.TrimVideoWithProgress(a.ctx, ffmpeg.TrimOptions{
 		InputPath:   inputPath,
 		OutputPath:  outputPath,
 		StartTime:   opts.StartTime,

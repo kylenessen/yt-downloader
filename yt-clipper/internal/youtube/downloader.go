@@ -2,9 +2,11 @@ package youtube
 
 import (
 	"context"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -84,7 +86,7 @@ func (d *Downloader) GetVideoInfo(ctx context.Context, url string) (*VideoInfo, 
 }
 
 // DownloadForPreview downloads a video for preview (720p or best available)
-func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir string, progressCb ProgressCallback) (string, error) {
+func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir string, ffmpegPath string, progressCb ProgressCallback) (string, error) {
 	videoID, err := ExtractVideoID(url)
 	if err != nil {
 		return "", err
@@ -109,7 +111,11 @@ func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir
 	defer stream.Close()
 
 	// Create destination file
-	filename := sanitizeFilename(video.Title) + ".mp4"
+	ext := extensionFromMimeType(format.MimeType)
+	if ext == "" {
+		ext = ".mp4"
+	}
+	filename := sanitizeFilename(video.Title) + ext
 	destPath := filepath.Join(destDir, filename)
 	file, err := os.Create(destPath)
 	if err != nil {
@@ -136,35 +142,48 @@ func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir
 		return "", fmt.Errorf("failed to download video: %w", err)
 	}
 
+	// If we couldn't get a Safari/WebKit-friendly MP4 (H.264 + AAC), optionally transcode.
+	if needsSafariTranscode(*format) {
+		if ffmpegPath != "" {
+			previewPath := filepath.Join(destDir, sanitizeFilename(video.Title)+"-preview.mp4")
+			if err := transcodeToMP4(ctx, ffmpegPath, destPath, previewPath); err == nil {
+				_ = os.Remove(destPath)
+				return previewPath, nil
+			}
+		}
+	}
+
 	return destPath, nil
 }
 
 // selectFormat picks the best format for preview (720p with audio preferred)
 func selectFormat(formats youtube.FormatList) *youtube.Format {
-	// Filter formats with both video and audio
+	// Prefer MP4 container with H.264 + AAC (most compatible with WebKit/Safari).
+	var mp4H264 []youtube.Format
+	var mp4Any []youtube.Format
 	var withAudio []youtube.Format
 	for _, f := range formats {
 		if f.AudioChannels > 0 && strings.Contains(f.MimeType, "video") {
 			withAudio = append(withAudio, f)
-		}
-	}
-
-	// Prefer 720p
-	for _, f := range withAudio {
-		if f.Height == 720 {
-			return &f
-		}
-	}
-
-	// Fallback to any format with audio, prefer higher quality
-	if len(withAudio) > 0 {
-		best := withAudio[0]
-		for _, f := range withAudio {
-			if f.Height > best.Height {
-				best = f
+			if strings.Contains(f.MimeType, "video/mp4") {
+				mp4Any = append(mp4Any, f)
+				if strings.Contains(f.MimeType, "avc1") && strings.Contains(f.MimeType, "mp4a") {
+					mp4H264 = append(mp4H264, f)
+				}
 			}
 		}
-		return &best
+	}
+
+	if best := pickBestWithAudio(mp4H264); best != nil {
+		return best
+	}
+
+	if best := pickBestWithAudio(mp4Any); best != nil {
+		return best
+	}
+
+	if best := pickBestWithAudio(withAudio); best != nil {
+		return best
 	}
 
 	// Last resort: any video format
@@ -174,6 +193,80 @@ func selectFormat(formats youtube.FormatList) *youtube.Format {
 		}
 	}
 
+	return nil
+}
+
+func pickBestWithAudio(formats []youtube.Format) *youtube.Format {
+	if len(formats) == 0 {
+		return nil
+	}
+
+	// Prefer 720p if available, otherwise highest resolution; break ties by bitrate.
+	bestIdx := 0
+	for i := 1; i < len(formats); i++ {
+		f := formats[i]
+		best := formats[bestIdx]
+		if f.Height == 720 && best.Height != 720 {
+			bestIdx = i
+			continue
+		}
+		if best.Height == 720 && f.Height != 720 {
+			continue
+		}
+		if f.Height > best.Height {
+			bestIdx = i
+			continue
+		}
+		if f.Height == best.Height && f.Bitrate > best.Bitrate {
+			bestIdx = i
+		}
+	}
+
+	return &formats[bestIdx]
+}
+
+func extensionFromMimeType(mimeType string) string {
+	switch {
+	case strings.Contains(mimeType, "video/mp4"):
+		return ".mp4"
+	case strings.Contains(mimeType, "video/webm"):
+		return ".webm"
+	default:
+		return ""
+	}
+}
+
+func needsSafariTranscode(f youtube.Format) bool {
+	// If it's a progressive MP4 with H.264 + AAC, we can usually play it directly.
+	if strings.Contains(f.MimeType, "video/mp4") && strings.Contains(f.MimeType, "avc1") && strings.Contains(f.MimeType, "mp4a") {
+		return false
+	}
+	return true
+}
+
+func transcodeToMP4(ctx context.Context, ffmpegPath string, inputPath string, outputPath string) error {
+	// H.264 + AAC, yuv420p for broad compatibility; faststart improves seeking.
+	cmd := exec.CommandContext(ctx, ffmpegPath,
+		"-y",
+		"-hide_banner",
+		"-loglevel", "error",
+		"-i", inputPath,
+		"-c:v", "libx264",
+		"-pix_fmt", "yuv420p",
+		"-c:a", "aac",
+		"-movflags", "+faststart",
+		outputPath,
+	)
+	var stderr bytes.Buffer
+	cmd.Stdout = nil
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			return err
+		}
+		return fmt.Errorf("%w: %s", err, msg)
+	}
 	return nil
 }
 

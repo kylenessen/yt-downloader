@@ -235,6 +235,7 @@ loadBtn.addEventListener('click', async () => {
 
         // Update video player
         videoPlayer.src = videoInfo.videoUrl;
+        videoPlayer.load();
         videoTitle.textContent = videoInfo.title;
         videoAuthor.textContent = videoInfo.author;
         filenameInput.value = videoInfo.title;
@@ -275,6 +276,12 @@ videoPlayer.addEventListener('loadedmetadata', () => {
         endSlider.value = duration;
         updateSliderRange();
     }
+});
+
+videoPlayer.addEventListener('error', () => {
+    const err = videoPlayer.error;
+    const code = err ? err.code : 'unknown';
+    showStatus(`Video playback failed (code ${code}).`, 'error');
 });
 
 // Slider events

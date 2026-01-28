@@ -2,6 +2,7 @@ package video
 
 import (
 	"fmt"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -45,6 +46,13 @@ func (s *Server) GetCurrentVideoURL() string {
 		return ""
 	}
 	return fmt.Sprintf("/video/%s", s.currentVideoID)
+}
+
+// GetCurrentVideoPath returns the absolute path of the current video, if any.
+func (s *Server) GetCurrentVideoPath() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.currentVideo
 }
 
 // ServeHTTP implements http.Handler for serving video files
@@ -113,8 +121,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	// Set content type for video
-	w.Header().Set("Content-Type", "video/mp4")
+	contentType := mime.TypeByExtension(filepath.Ext(videoPath))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	// Use ServeContent for range request support (seeking in video)
 	http.ServeContent(w, r, filepath.Base(videoPath), info.ModTime(), file)
