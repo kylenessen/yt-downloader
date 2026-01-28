@@ -290,6 +290,7 @@ video {
     display: flex;
     gap: 8px;
     margin-top: 12px;
+    justify-content: flex-end;
 }
 
 .trim-buttons .btn {

@@ -51,9 +51,7 @@ document.querySelector('#app').innerHTML = `
                 <video id="videoPlayer"></video>
                 <div class="player-controls" id="playerControls">
                     <div class="player-controls-row">
-                        <button class="btn btn-secondary player-btn" id="skipBackBtn" title="Back 1s">-1s</button>
                         <button class="btn player-btn" id="playPauseBtn" title="Play/Pause">Play</button>
-                        <button class="btn btn-secondary player-btn" id="skipForwardBtn" title="Forward 1s">+1s</button>
                         <div class="player-time" id="playbackTime">00:00:00 / 00:00:00</div>
                     </div>
                     <input type="range" class="player-scrub" id="playbackSlider" min="0" max="0" value="0" step="0.01" />
@@ -77,8 +75,6 @@ document.querySelector('#app').innerHTML = `
                     Clip duration: <span class="clip-duration" id="clipDuration">0:00</span>
                 </div>
                 <div class="trim-buttons">
-                    <button class="btn btn-secondary" id="setStartBtn">Set Start</button>
-                    <button class="btn btn-secondary" id="setEndBtn">Set End</button>
                     <button class="btn btn-secondary" id="previewBtn">Preview Clip</button>
                 </div>
             </div>
@@ -133,8 +129,6 @@ const ffmpegProgressText = document.getElementById('ffmpegProgressText');
 const videoSection = document.getElementById('videoSection');
 const videoPlayer = document.getElementById('videoPlayer');
 const playPauseBtn = document.getElementById('playPauseBtn');
-const skipBackBtn = document.getElementById('skipBackBtn');
-const skipForwardBtn = document.getElementById('skipForwardBtn');
 const playbackSlider = document.getElementById('playbackSlider');
 const playbackTime = document.getElementById('playbackTime');
 const videoTitle = document.getElementById('videoTitle');
@@ -147,8 +141,6 @@ const startTimeDisplay = document.getElementById('startTimeDisplay');
 const endTimeDisplay = document.getElementById('endTimeDisplay');
 const clipDuration = document.getElementById('clipDuration');
 
-const setStartBtn = document.getElementById('setStartBtn');
-const setEndBtn = document.getElementById('setEndBtn');
 const previewBtn = document.getElementById('previewBtn');
 
 const exportSection = document.getElementById('exportSection');
@@ -366,16 +358,6 @@ playPauseBtn.addEventListener('click', async () => {
     }
 });
 
-skipBackBtn.addEventListener('click', () => {
-    if (!videoPlayer.src) return;
-    seekPreview(Math.max(0, videoPlayer.currentTime - 1));
-});
-
-skipForwardBtn.addEventListener('click', () => {
-    if (!videoPlayer.src) return;
-    seekPreview(Math.min(duration, videoPlayer.currentTime + 1));
-});
-
 let scrubWasPlaying = false;
 playbackSlider.addEventListener('pointerdown', () => {
     scrubWasPlaying = !videoPlayer.paused;
@@ -436,26 +418,6 @@ endSlider.addEventListener('input', () => {
 });
 
 // Trim buttons
-setStartBtn.addEventListener('click', () => {
-    startTime = videoPlayer.currentTime;
-    startSlider.value = startTime;
-    if (startTime >= endTime) {
-        endTime = Math.min(startTime + 1, duration);
-        endSlider.value = endTime;
-    }
-    updateSliderRange();
-});
-
-setEndBtn.addEventListener('click', () => {
-    endTime = videoPlayer.currentTime;
-    endSlider.value = endTime;
-    if (endTime <= startTime) {
-        startTime = Math.max(endTime - 1, 0);
-        startSlider.value = startTime;
-    }
-    updateSliderRange();
-});
-
 previewBtn.addEventListener('click', () => {
     videoPlayer.currentTime = startTime;
     videoPlayer.play();
