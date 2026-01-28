@@ -7,7 +7,7 @@ BUILD_DIR="$PROJECT_DIR/build/bin"
 FFMPEG_DIR="$PROJECT_DIR/build/windows/Resources"
 FFMPEG_SOURCE="$FFMPEG_DIR/ffmpeg.exe"
 
-echo "🔨 Building YouTube Clipper for Windows..."
+echo "🔨 Building YT Downloader for Windows..."
 
 # Check if FFmpeg binary exists in build resources
 if [ ! -f "$FFMPEG_SOURCE" ]; then
@@ -39,18 +39,18 @@ cd "$PROJECT_DIR"
 wails build -platform "windows/amd64"
 
 # Create distribution folder with exe and ffmpeg
-DIST_DIR="$BUILD_DIR/yt-clipper-windows"
+DIST_DIR="$BUILD_DIR/yt-downloader-windows"
 mkdir -p "$DIST_DIR"
 
 echo "📦 Creating Windows distribution..."
 
-# Wails creates yt-clipper.exe when building for single platform
-if [ -f "$BUILD_DIR/yt-clipper.exe" ]; then
-    cp "$BUILD_DIR/yt-clipper.exe" "$DIST_DIR/yt-clipper.exe"
-    rm -f "$BUILD_DIR/yt-clipper.exe"
-elif [ -f "$BUILD_DIR/yt-clipper-amd64.exe" ]; then
-    cp "$BUILD_DIR/yt-clipper-amd64.exe" "$DIST_DIR/yt-clipper.exe"
-    rm -f "$BUILD_DIR/yt-clipper-amd64.exe"
+# Wails creates yt-downloader.exe when building for single platform
+if [ -f "$BUILD_DIR/yt-downloader.exe" ]; then
+    cp "$BUILD_DIR/yt-downloader.exe" "$DIST_DIR/yt-downloader.exe"
+    rm -f "$BUILD_DIR/yt-downloader.exe"
+elif [ -f "$BUILD_DIR/yt-downloader-amd64.exe" ]; then
+    cp "$BUILD_DIR/yt-downloader-amd64.exe" "$DIST_DIR/yt-downloader.exe"
+    rm -f "$BUILD_DIR/yt-downloader-amd64.exe"
 else
     echo "❌ Could not find Windows exe"
     exit 1
@@ -68,4 +68,4 @@ ls -lh "$DIST_DIR/"
 echo ""
 echo "Total size: $(du -sh "$DIST_DIR" | cut -f1)"
 echo ""
-echo "📝 Note: Users should keep ffmpeg.exe in the same folder as yt-clipper.exe"
+echo "📝 Note: Users should keep ffmpeg.exe in the same folder as yt-downloader.exe"

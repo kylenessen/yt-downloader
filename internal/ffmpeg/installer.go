@@ -35,7 +35,7 @@ func NewInstaller() (*Installer, error) {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	cacheDir := filepath.Join(homeDir, ".cache", "yt-clipper", "bin")
+	cacheDir := filepath.Join(homeDir, ".cache", "yt-downloader", "bin")
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}

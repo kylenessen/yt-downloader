@@ -3,7 +3,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "🚀 Building YouTube Clipper for all platforms..."
+echo "🚀 Building YT Downloader for all platforms..."
 echo ""
 
 # Build macOS

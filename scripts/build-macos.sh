@@ -6,7 +6,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_DIR/build/bin"
 FFMPEG_SOURCE="$PROJECT_DIR/build/darwin/Resources/ffmpeg"
 
-echo "🔨 Building YouTube Clipper for macOS (Intel + Apple Silicon)..."
+echo "🔨 Building YT Downloader for macOS (Intel + Apple Silicon)..."
 
 # Check if FFmpeg binary exists in build resources
 if [ ! -f "$FFMPEG_SOURCE" ]; then
@@ -25,7 +25,7 @@ wails build -platform "darwin/amd64,darwin/arm64"
 
 # Bundle FFmpeg into both app variants
 for ARCH in amd64 arm64; do
-    APP_PATH="$BUILD_DIR/yt-clipper-${ARCH}.app"
+    APP_PATH="$BUILD_DIR/yt-downloader-${ARCH}.app"
     RESOURCES_DIR="$APP_PATH/Contents/Resources"
     
     if [ -d "$APP_PATH" ]; then
@@ -44,5 +44,5 @@ ls -lh "$BUILD_DIR/"*.app 2>/dev/null | while read line; do
     echo "  $line"
 done
 echo ""
-echo "Intel (amd64) size: $(du -sh "$BUILD_DIR/yt-clipper-amd64.app" 2>/dev/null | cut -f1)"
-echo "Apple Silicon (arm64) size: $(du -sh "$BUILD_DIR/yt-clipper-arm64.app" 2>/dev/null | cut -f1)"
+echo "Intel (amd64) size: $(du -sh "$BUILD_DIR/yt-downloader-amd64.app" 2>/dev/null | cut -f1)"
+echo "Apple Silicon (arm64) size: $(du -sh "$BUILD_DIR/yt-downloader-arm64.app" 2>/dev/null | cut -f1)"

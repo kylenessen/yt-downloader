@@ -1,2 +1,14 @@
-yt-clipper/build/.DS_Store
+# Build outputs
+build/bin
+dist/
+
+# Dependencies
+node_modules
+frontend/dist
+
+# Platform-specific resources (downloaded during build)
+build/darwin/Resources/ffmpeg
+build/windows/Resources/
+
+# OS files
 .DS_Store

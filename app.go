@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"yt-clipper/internal/ffmpeg"
-	"yt-clipper/internal/video"
-	"yt-clipper/internal/youtube"
+	"yt-downloader/internal/ffmpeg"
+	"yt-downloader/internal/video"
+	"yt-downloader/internal/youtube"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -44,7 +44,7 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
 	// Create temp directory for downloads
-	tempDir, err := os.MkdirTemp("", "yt-clipper-*")
+	tempDir, err := os.MkdirTemp("", "yt-downloader-*")
 	if err != nil {
 		runtime.LogError(ctx, fmt.Sprintf("Failed to create temp directory: %v", err))
 	} else {

@@ -1,4 +1,4 @@
-# YouTube Clipper
+# YT Downloader
 
 A self-contained desktop app for downloading, trimming, and exporting YouTube video clips.
 
@@ -6,9 +6,9 @@ A self-contained desktop app for downloading, trimming, and exporting YouTube vi
 
 | Platform | Download |
 |----------|----------|
-| **macOS (Apple Silicon)** | [Download for M1/M2/M3 Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/yt-clipper-macos-apple-silicon.zip) |
-| **macOS (Intel)** | [Download for Intel Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/yt-clipper-macos-intel.zip) |
-| **Windows** | [Download for Windows](https://github.com/kylenessen/yt-downloader/releases/latest/download/yt-clipper-windows.zip) |
+| **macOS (Apple Silicon)** | [Download for M1/M2/M3 Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/yt-downloader-macos-apple-silicon.zip) |
+| **macOS (Intel)** | [Download for Intel Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/yt-downloader-macos-intel.zip) |
+| **Windows** | [Download for Windows](https://github.com/kylenessen/yt-downloader/releases/latest/download/yt-downloader-windows.zip) |
 
 > **Not sure which Mac you have?** Click  → About This Mac. If it says "Apple M1/M2/M3", use Apple Silicon. If it says "Intel", use Intel.
 
@@ -16,13 +16,13 @@ A self-contained desktop app for downloading, trimming, and exporting YouTube vi
 
 **macOS:**
 1. Download and unzip
-2. Drag `yt-clipper.app` to your Applications folder
+2. Drag `YT Downloader.app` to your Applications folder
 3. Right-click → Open (first time only, to bypass Gatekeeper)
 
 **Windows:**
 1. Download and unzip
-2. Keep `yt-clipper.exe` and `ffmpeg.exe` in the same folder
-3. Run `yt-clipper.exe`
+2. Keep `yt-downloader.exe` and `ffmpeg.exe` in the same folder
+3. Run `yt-downloader.exe`
 
 ## Features
 
