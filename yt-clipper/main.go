@@ -17,9 +17,11 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "YouTube Clipper",
-		Width:  1024,
-		Height: 768,
+		Title:    "YouTube Clipper",
+		Width:    1024,
+		Height:   768,
+		MinWidth:  980,
+		MinHeight: 700,
 		AssetServer: &assetserver.Options{
 			Assets:  assets,
 			Handler: app.GetVideoServer(),
