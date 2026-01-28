@@ -6,23 +6,23 @@
 
 :root {
     /* System-default (light) */
-    --bg-primary: #f6f6f7;
-    --bg-secondary: #ffffff;
-    --bg-tertiary: #efeff2;
-    --text-primary: #111113;
-    --text-secondary: #5a5a63;
-    --border: rgba(17, 17, 19, 0.12);
+    --bg-primary: #f3f3f4;
+    --bg-secondary: #f8f8f9;
+    --bg-tertiary: #ececee;
+    --text-primary: #222226;
+    --text-secondary: rgba(34, 34, 38, 0.68);
+    --border: rgba(34, 34, 38, 0.12);
 
-    --accent: #111113;
-    --accent-hover: #000000;
+    --accent: #2a2a30;
+    --accent-hover: #1f1f24;
 
-    --btn-primary-bg: #111113;
-    --btn-primary-fg: #ffffff;
-    --btn-primary-hover-bg: #000000;
+    --btn-primary-bg: #2a2a30;
+    --btn-primary-fg: #f8f8f9;
+    --btn-primary-hover-bg: #1f1f24;
 
-    --btn-secondary-bg: #e5e5ea;
-    --btn-secondary-fg: #111113;
-    --btn-secondary-hover-bg: #d8d8df;
+    --btn-secondary-bg: #e2e2e6;
+    --btn-secondary-fg: #2a2a30;
+    --btn-secondary-hover-bg: #d7d7dc;
 
     --success: #4ade80;
     --warning: #fbbf24;
@@ -32,64 +32,64 @@
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --bg-primary: #0c0c0f;
-        --bg-secondary: #121217;
-        --bg-tertiary: #181821;
-        --text-primary: #f5f5f7;
-        --text-secondary: rgba(245, 245, 247, 0.68);
-        --border: rgba(245, 245, 247, 0.12);
+        --bg-primary: #121216;
+        --bg-secondary: #17171d;
+        --bg-tertiary: #1d1d25;
+        --text-primary: #e8e8ec;
+        --text-secondary: rgba(232, 232, 236, 0.68);
+        --border: rgba(232, 232, 236, 0.12);
 
-        --accent: #f5f5f7;
-        --accent-hover: #ffffff;
+        --accent: #e8e8ec;
+        --accent-hover: #f2f2f6;
 
-        --btn-primary-bg: #f5f5f7;
-        --btn-primary-fg: #0c0c0f;
-        --btn-primary-hover-bg: #ffffff;
+        --btn-primary-bg: #e0e0e6;
+        --btn-primary-fg: #141418;
+        --btn-primary-hover-bg: #f2f2f6;
 
-        --btn-secondary-bg: #1c1c25;
-        --btn-secondary-fg: #f5f5f7;
-        --btn-secondary-hover-bg: #232330;
+        --btn-secondary-bg: #22222b;
+        --btn-secondary-fg: #e8e8ec;
+        --btn-secondary-hover-bg: #2b2b36;
     }
 }
 
 :root[data-theme="light"] {
-    --bg-primary: #f6f6f7;
-    --bg-secondary: #ffffff;
-    --bg-tertiary: #efeff2;
-    --text-primary: #111113;
-    --text-secondary: #5a5a63;
-    --border: rgba(17, 17, 19, 0.12);
+    --bg-primary: #f3f3f4;
+    --bg-secondary: #f8f8f9;
+    --bg-tertiary: #ececee;
+    --text-primary: #222226;
+    --text-secondary: rgba(34, 34, 38, 0.68);
+    --border: rgba(34, 34, 38, 0.12);
 
-    --accent: #111113;
-    --accent-hover: #000000;
+    --accent: #2a2a30;
+    --accent-hover: #1f1f24;
 
-    --btn-primary-bg: #111113;
-    --btn-primary-fg: #ffffff;
-    --btn-primary-hover-bg: #000000;
+    --btn-primary-bg: #2a2a30;
+    --btn-primary-fg: #f8f8f9;
+    --btn-primary-hover-bg: #1f1f24;
 
-    --btn-secondary-bg: #e5e5ea;
-    --btn-secondary-fg: #111113;
-    --btn-secondary-hover-bg: #d8d8df;
+    --btn-secondary-bg: #e2e2e6;
+    --btn-secondary-fg: #2a2a30;
+    --btn-secondary-hover-bg: #d7d7dc;
 }
 
 :root[data-theme="dark"] {
-    --bg-primary: #0c0c0f;
-    --bg-secondary: #121217;
-    --bg-tertiary: #181821;
-    --text-primary: #f5f5f7;
-    --text-secondary: rgba(245, 245, 247, 0.68);
-    --border: rgba(245, 245, 247, 0.12);
+    --bg-primary: #121216;
+    --bg-secondary: #17171d;
+    --bg-tertiary: #1d1d25;
+    --text-primary: #e8e8ec;
+    --text-secondary: rgba(232, 232, 236, 0.68);
+    --border: rgba(232, 232, 236, 0.12);
 
-    --accent: #f5f5f7;
-    --accent-hover: #ffffff;
+    --accent: #e8e8ec;
+    --accent-hover: #f2f2f6;
 
-    --btn-primary-bg: #f5f5f7;
-    --btn-primary-fg: #0c0c0f;
-    --btn-primary-hover-bg: #ffffff;
+    --btn-primary-bg: #e0e0e6;
+    --btn-primary-fg: #141418;
+    --btn-primary-hover-bg: #f2f2f6;
 
-    --btn-secondary-bg: #1c1c25;
-    --btn-secondary-fg: #f5f5f7;
-    --btn-secondary-hover-bg: #232330;
+    --btn-secondary-bg: #22222b;
+    --btn-secondary-fg: #e8e8ec;
+    --btn-secondary-hover-bg: #2b2b36;
 }
 
 body {
@@ -108,6 +108,7 @@ html, body {
     max-width: 1180px;
     margin: 0 auto;
     padding: 16px;
+    position: relative;
 }
 
 h1 {
@@ -115,6 +116,39 @@ h1 {
     margin-bottom: 24px;
     font-size: 28px;
     color: var(--text-primary);
+}
+
+.icon-btn {
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border-radius: 10px;
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+}
+
+.icon-btn:hover {
+    background: var(--bg-tertiary);
+}
+
+.icon-btn:active {
+    transform: scale(0.98);
+}
+
+.icon-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.theme-toggle {
+    position: absolute;
+    top: 14px;
+    left: 14px;
 }
 
 .container {
@@ -159,30 +193,6 @@ h1 {
     font-size: 16px;
     font-weight: 600;
     margin-bottom: 12px;
-}
-
-.landing-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
-}
-
-.landing-top .landing-title {
-    margin-bottom: 0;
-}
-
-.sidebar-actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-.theme-select {
-    padding: 8px 10px;
-    font-size: 12px;
-    width: 96px;
 }
 
 .landing-url {
@@ -246,7 +256,6 @@ h1 {
 
 .layout.sidebar-collapsed .sidebar-title,
 .layout.sidebar-collapsed .card-title,
-.layout.sidebar-collapsed .theme-select,
 .layout.sidebar-collapsed label,
 .layout.sidebar-collapsed .url-input,
 .layout.sidebar-collapsed .directory-select,

@@ -15,6 +15,7 @@ let themePreference = 'system';
 // Initialize the app
 document.querySelector('#app').innerHTML = `
     <h1>YouTube Clipper</h1>
+    <button class="icon-btn theme-toggle" id="themeToggle" title="Toggle theme" aria-label="Toggle theme"></button>
 
     <!-- FFmpeg Install Banner -->
     <div class="ffmpeg-banner" id="ffmpegBanner">
@@ -31,14 +32,7 @@ document.querySelector('#app').innerHTML = `
     <!-- Landing -->
     <div class="landing" id="landing">
         <div class="landing-card">
-            <div class="landing-top">
-                <div class="landing-title">Paste a YouTube link</div>
-                <select id="themeSelectHero" class="select theme-select" title="Theme">
-                    <option value="system" selected>System</option>
-                    <option value="light">Light</option>
-                    <option value="dark">Dark</option>
-                </select>
-            </div>
+            <div class="landing-title">Paste a YouTube link</div>
             <div class="url-section landing-url">
                 <input type="text" class="url-input" id="urlInputHero" placeholder="https://www.youtube.com/watch?v=..." />
                 <button class="btn" id="loadBtnHero">Load</button>
@@ -51,14 +45,7 @@ document.querySelector('#app').innerHTML = `
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div class="sidebar-title">Controls</div>
-                <div class="sidebar-actions">
-                    <select id="themeSelect" class="select theme-select" title="Theme">
-                        <option value="system" selected>System</option>
-                        <option value="light">Light</option>
-                        <option value="dark">Dark</option>
-                    </select>
-                    <button class="btn btn-secondary sidebar-toggle" id="sidebarToggle" title="Collapse sidebar">⟨</button>
-                </div>
+                <button class="btn btn-secondary sidebar-toggle" id="sidebarToggle" title="Collapse sidebar">⟨</button>
             </div>
 
             <div class="card">
@@ -164,7 +151,7 @@ document.querySelector('#app').innerHTML = `
 const landing = document.getElementById('landing');
 const urlInputHero = document.getElementById('urlInputHero');
 const loadBtnHero = document.getElementById('loadBtnHero');
-const themeSelectHero = document.getElementById('themeSelectHero');
+const themeToggle = document.getElementById('themeToggle');
 
 const urlInput = document.getElementById('urlInput');
 const loadBtn = document.getElementById('loadBtn');
@@ -180,7 +167,6 @@ const ffmpegProgressText = document.getElementById('ffmpegProgressText');
 
 const layoutRoot = document.getElementById('layoutRoot');
 const sidebarToggle = document.getElementById('sidebarToggle');
-const themeSelect = document.getElementById('themeSelect');
 const thumbRow = document.getElementById('thumbRow');
 const thumbnailImg = document.getElementById('thumbnailImg');
 
@@ -214,6 +200,28 @@ const exportProgressText = document.getElementById('exportProgressText');
 
 const statusMessage = document.getElementById('statusMessage');
 
+function getEffectiveTheme() {
+    if (document.documentElement.dataset.theme === 'dark') return 'dark';
+    if (document.documentElement.dataset.theme === 'light') return 'light';
+    try {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch (e) {
+        return 'light';
+    }
+}
+
+function renderThemeToggle() {
+    const effective = getEffectiveTheme();
+    // Show the *action* icon: if currently dark, show sun (go light); else show moon (go dark).
+    const next = effective === 'dark' ? 'light' : 'dark';
+    const icon =
+        next === 'dark'
+            ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 14.5A8.5 8.5 0 0 1 9.5 3a7 7 0 1 0 11.5 11.5Z" fill="currentColor"/></svg>`
+            : `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12Zm0-16h0m0 20h0M4.22 4.22h0m15.56 15.56h0M2 12h0m20 0h0M4.22 19.78h0m15.56-15.56h0" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>`;
+    themeToggle.innerHTML = icon;
+    themeToggle.setAttribute('data-next', next);
+}
+
 function applyTheme(preference) {
     themePreference = preference;
     if (preference === 'system') {
@@ -230,11 +238,8 @@ function applyTheme(preference) {
     } catch (e) {
         // No-op in browser without Wails runtime
     }
-}
 
-function syncThemeSelects() {
-    themeSelect.value = themePreference;
-    themeSelectHero.value = themePreference;
+    renderThemeToggle();
 }
 
 // Sidebar collapse
@@ -255,19 +260,22 @@ sidebarToggle.addEventListener('click', () => {
     setSidebarCollapsed(!layoutRoot.classList.contains('sidebar-collapsed'));
 });
 
+// Default to open, unless the user explicitly collapsed it.
 setSidebarCollapsed(localStorage.getItem('sidebarCollapsed') === '1');
 
-themePreference = localStorage.getItem('themePreference') || 'system';
+const storedTheme = localStorage.getItem('themePreference');
+themePreference = storedTheme === 'light' || storedTheme === 'dark' ? storedTheme : 'system';
 applyTheme(themePreference);
-syncThemeSelects();
+renderThemeToggle();
 
-themeSelect.addEventListener('change', () => {
-    applyTheme(themeSelect.value);
-    syncThemeSelects();
-});
-themeSelectHero.addEventListener('change', () => {
-    applyTheme(themeSelectHero.value);
-    syncThemeSelects();
+themeToggle.addEventListener('click', () => {
+    const effective = getEffectiveTheme();
+    if (themePreference === 'system') {
+        // First interaction overrides system to the opposite (so the click is always meaningful).
+        applyTheme(effective === 'dark' ? 'light' : 'dark');
+        return;
+    }
+    applyTheme(themePreference === 'dark' ? 'light' : 'dark');
 });
 
 // Keep native window theme in sync when following system
@@ -275,7 +283,6 @@ try {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
         if (themePreference === 'system') {
             applyTheme('system');
-            syncThemeSelects();
         }
     });
 } catch (e) {
@@ -433,6 +440,7 @@ async function loadVideoFromURL(url) {
 
         // Show sections
         showLayout();
+        setSidebarCollapsed(false);
         videoSection.classList.add('visible');
         exportSection.classList.add('visible');
         qualitySelect.value = exportQuality;
