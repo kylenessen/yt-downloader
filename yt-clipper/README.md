@@ -1,6 +1,28 @@
 # YouTube Clipper
 
-A self-contained macOS app for downloading, trimming, and exporting YouTube video clips.
+A self-contained desktop app for downloading, trimming, and exporting YouTube video clips.
+
+## 📥 Download
+
+| Platform | Download |
+|----------|----------|
+| **macOS (Apple Silicon)** | [Download for M1/M2/M3 Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/yt-clipper-macos-apple-silicon.zip) |
+| **macOS (Intel)** | [Download for Intel Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/yt-clipper-macos-intel.zip) |
+| **Windows** | [Download for Windows](https://github.com/kylenessen/yt-downloader/releases/latest/download/yt-clipper-windows.zip) |
+
+> **Not sure which Mac you have?** Click  → About This Mac. If it says "Apple M1/M2/M3", use Apple Silicon. If it says "Intel", use Intel.
+
+### Installation
+
+**macOS:**
+1. Download and unzip
+2. Drag `yt-clipper.app` to your Applications folder
+3. Right-click → Open (first time only, to bypass Gatekeeper)
+
+**Windows:**
+1. Download and unzip
+2. Keep `yt-clipper.exe` and `ffmpeg.exe` in the same folder
+3. Run `yt-clipper.exe`
 
 ## Features
 
@@ -8,52 +30,37 @@ A self-contained macOS app for downloading, trimming, and exporting YouTube vide
 - ✂️ Trim clips with a visual editor
 - 🎚️ Quality selection (360p - 1080p or original)
 - 🔇 Optional audio removal
-- 📦 Self-contained - no external dependencies required
+- 📦 Self-contained - FFmpeg is bundled, no external dependencies required
 
-## Building for Distribution
+## Building from Source
 
-To build a distributable app bundle with FFmpeg included:
-
-```bash
-./scripts/build-macos.sh
-```
-
-This will:
-1. Download FFmpeg if not already present
-2. Build the Wails app
-3. Bundle FFmpeg into the `.app` package
-
-The final app will be at `build/bin/yt-clipper.app` (~90MB).
-
-## Development
-
-### Live Development
-
-To run in live development mode:
-
-```bash
-wails dev
-```
-
-This runs a Vite development server with hot reload for frontend changes.
-
-### Quick Build (without bundled FFmpeg)
-
-For development builds where you have FFmpeg installed via Homebrew:
-
-```bash
-wails build
-```
-
-Note: Users without FFmpeg installed will see a prompt to install it.
-
-## Requirements
-
-### For Development
+### Prerequisites
 - Go 1.21+
 - Node.js 18+
 - Wails CLI (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
 
-### For End Users
-- macOS 11+ (Big Sur or later)
-- No additional dependencies when using the bundled build
+### Build All Platforms
+
+```bash
+./scripts/build-all.sh
+```
+
+### Build Individual Platforms
+
+```bash
+./scripts/build-macos.sh   # macOS Intel + Apple Silicon
+./scripts/build-windows.sh # Windows x64
+```
+
+### Development
+
+```bash
+wails dev  # Live development with hot reload
+```
+
+## System Requirements
+
+| Platform | Requirements |
+|----------|-------------|
+| macOS | macOS 11+ (Big Sur or later) |
+| Windows | Windows 10+ (64-bit) |
