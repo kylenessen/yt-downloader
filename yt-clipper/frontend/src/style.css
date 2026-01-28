@@ -25,6 +25,10 @@ body {
     overflow-x: hidden;
 }
 
+html, body {
+    height: 100%;
+}
+
 #app {
     max-width: 1180px;
     margin: 0 auto;
@@ -50,6 +54,45 @@ h1 {
     display: flex;
     gap: 12px;
     align-items: flex-start;
+}
+
+.layout.hidden {
+    display: none;
+}
+
+.landing {
+    display: none;
+    min-height: 60vh;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 0;
+}
+
+.landing.visible {
+    display: flex;
+}
+
+.landing-card {
+    width: min(760px, 100%);
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius);
+    padding: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.landing-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.landing-url {
+    margin-bottom: 10px;
+}
+
+.landing-hint {
+    font-size: 12px;
+    color: var(--text-secondary);
 }
 
 .sidebar {

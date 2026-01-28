@@ -26,6 +26,18 @@ document.querySelector('#app').innerHTML = `
         </div>
     </div>
 
+    <!-- Landing -->
+    <div class="landing" id="landing">
+        <div class="landing-card">
+            <div class="landing-title">Paste a YouTube link</div>
+            <div class="url-section landing-url">
+                <input type="text" class="url-input" id="urlInputHero" placeholder="https://www.youtube.com/watch?v=..." />
+                <button class="btn" id="loadBtnHero">Load</button>
+            </div>
+            <div class="landing-hint">After loading, you can trim and export on the next screen.</div>
+        </div>
+    </div>
+
     <div class="layout" id="layoutRoot">
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
@@ -123,6 +135,10 @@ document.querySelector('#app').innerHTML = `
 `;
 
 // DOM Elements
+const landing = document.getElementById('landing');
+const urlInputHero = document.getElementById('urlInputHero');
+const loadBtnHero = document.getElementById('loadBtnHero');
+
 const urlInput = document.getElementById('urlInput');
 const loadBtn = document.getElementById('loadBtn');
 const downloadProgress = document.getElementById('downloadProgress');
@@ -188,6 +204,16 @@ sidebarToggle.addEventListener('click', () => {
 });
 
 setSidebarCollapsed(localStorage.getItem('sidebarCollapsed') === '1');
+
+function showLanding() {
+    landing.classList.add('visible');
+    layoutRoot.classList.add('hidden');
+}
+
+function showLayout() {
+    landing.classList.remove('visible');
+    layoutRoot.classList.remove('hidden');
+}
 
 // Format time as HH:MM:SS
 function formatTime(seconds) {
@@ -285,26 +311,7 @@ async function checkFfmpeg() {
     }
 }
 
-// Install FFmpeg
-installFfmpegBtn.addEventListener('click', async () => {
-    try {
-        installFfmpegBtn.disabled = true;
-        ffmpegProgress.classList.add('visible');
-        await InstallFFmpeg();
-        ffmpegInstalled = true;
-        ffmpegBanner.classList.remove('visible');
-        showStatus('FFmpeg installed successfully!', 'success');
-    } catch (err) {
-        showStatus(`Failed to install FFmpeg: ${err}`, 'error');
-        installFfmpegBtn.disabled = false;
-    } finally {
-        ffmpegProgress.classList.remove('visible');
-    }
-});
-
-// Load video
-loadBtn.addEventListener('click', async () => {
-    const url = urlInput.value.trim();
+async function loadVideoFromURL(url) {
     if (!url) {
         showStatus('Please enter a YouTube URL', 'error');
         return;
@@ -312,6 +319,7 @@ loadBtn.addEventListener('click', async () => {
 
     try {
         loadBtn.disabled = true;
+        loadBtnHero.disabled = true;
         downloadProgress.classList.add('visible');
         downloadProgressFill.style.width = '0%';
         downloadProgressText.textContent = 'Downloading...';
@@ -324,6 +332,8 @@ loadBtn.addEventListener('click', async () => {
         videoTitle.textContent = videoInfo.title;
         videoAuthor.textContent = videoInfo.author;
         filenameInput.value = videoInfo.title;
+        urlInput.value = url;
+        urlInputHero.value = url;
         if (videoInfo.thumbnail) {
             thumbnailImg.src = videoInfo.thumbnail;
             thumbRow.classList.add('visible');
@@ -345,6 +355,7 @@ loadBtn.addEventListener('click', async () => {
         updatePlaybackControls();
 
         // Show sections
+        showLayout();
         videoSection.classList.add('visible');
         exportSection.classList.add('visible');
 
@@ -353,7 +364,40 @@ loadBtn.addEventListener('click', async () => {
         showStatus(`Failed to load video: ${err}`, 'error');
     } finally {
         loadBtn.disabled = false;
+        loadBtnHero.disabled = false;
         downloadProgress.classList.remove('visible');
+    }
+}
+
+// Install FFmpeg
+installFfmpegBtn.addEventListener('click', async () => {
+    try {
+        installFfmpegBtn.disabled = true;
+        ffmpegProgress.classList.add('visible');
+        await InstallFFmpeg();
+        ffmpegInstalled = true;
+        ffmpegBanner.classList.remove('visible');
+        showStatus('FFmpeg installed successfully!', 'success');
+    } catch (err) {
+        showStatus(`Failed to install FFmpeg: ${err}`, 'error');
+        installFfmpegBtn.disabled = false;
+    } finally {
+        ffmpegProgress.classList.remove('visible');
+    }
+});
+
+// Load video
+loadBtn.addEventListener('click', async () => loadVideoFromURL(urlInput.value.trim()));
+loadBtnHero.addEventListener('click', async () => loadVideoFromURL(urlInputHero.value.trim()));
+
+urlInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        loadVideoFromURL(urlInput.value.trim());
+    }
+});
+urlInputHero.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        loadVideoFromURL(urlInputHero.value.trim());
     }
 });
 
@@ -548,3 +592,4 @@ EventsOn('ffmpeg:progress', (data) => {
 // Initialize
 checkFfmpeg();
 thumbRow.classList.remove('visible');
+showLanding();
