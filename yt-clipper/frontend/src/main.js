@@ -1,6 +1,6 @@
 import './style.css';
 import { LoadVideo, SelectOutputDirectory, ExportClip, CheckFFmpeg, InstallFFmpeg } from '../wailsjs/go/main/App';
-import { EventsOn } from '../wailsjs/runtime/runtime';
+import { EventsOn, WindowSetDarkTheme, WindowSetLightTheme, WindowSetSystemDefaultTheme } from '../wailsjs/runtime/runtime';
 
 // State
 let videoInfo = null;
@@ -10,6 +10,7 @@ let duration = 0;
 let outputDir = '';
 let ffmpegInstalled = false;
 let exportQuality = '720p';
+let themePreference = 'system';
 
 // Initialize the app
 document.querySelector('#app').innerHTML = `
@@ -30,7 +31,14 @@ document.querySelector('#app').innerHTML = `
     <!-- Landing -->
     <div class="landing" id="landing">
         <div class="landing-card">
-            <div class="landing-title">Paste a YouTube link</div>
+            <div class="landing-top">
+                <div class="landing-title">Paste a YouTube link</div>
+                <select id="themeSelectHero" class="select theme-select" title="Theme">
+                    <option value="system" selected>System</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                </select>
+            </div>
             <div class="url-section landing-url">
                 <input type="text" class="url-input" id="urlInputHero" placeholder="https://www.youtube.com/watch?v=..." />
                 <button class="btn" id="loadBtnHero">Load</button>
@@ -43,7 +51,14 @@ document.querySelector('#app').innerHTML = `
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <div class="sidebar-title">Controls</div>
-                <button class="btn btn-secondary sidebar-toggle" id="sidebarToggle" title="Collapse sidebar">⟨</button>
+                <div class="sidebar-actions">
+                    <select id="themeSelect" class="select theme-select" title="Theme">
+                        <option value="system" selected>System</option>
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                    </select>
+                    <button class="btn btn-secondary sidebar-toggle" id="sidebarToggle" title="Collapse sidebar">⟨</button>
+                </div>
             </div>
 
             <div class="card">
@@ -149,6 +164,7 @@ document.querySelector('#app').innerHTML = `
 const landing = document.getElementById('landing');
 const urlInputHero = document.getElementById('urlInputHero');
 const loadBtnHero = document.getElementById('loadBtnHero');
+const themeSelectHero = document.getElementById('themeSelectHero');
 
 const urlInput = document.getElementById('urlInput');
 const loadBtn = document.getElementById('loadBtn');
@@ -164,6 +180,7 @@ const ffmpegProgressText = document.getElementById('ffmpegProgressText');
 
 const layoutRoot = document.getElementById('layoutRoot');
 const sidebarToggle = document.getElementById('sidebarToggle');
+const themeSelect = document.getElementById('themeSelect');
 const thumbRow = document.getElementById('thumbRow');
 const thumbnailImg = document.getElementById('thumbnailImg');
 
@@ -197,6 +214,29 @@ const exportProgressText = document.getElementById('exportProgressText');
 
 const statusMessage = document.getElementById('statusMessage');
 
+function applyTheme(preference) {
+    themePreference = preference;
+    if (preference === 'system') {
+        delete document.documentElement.dataset.theme;
+    } else {
+        document.documentElement.dataset.theme = preference;
+    }
+    localStorage.setItem('themePreference', preference);
+
+    try {
+        if (preference === 'dark') WindowSetDarkTheme();
+        else if (preference === 'light') WindowSetLightTheme();
+        else WindowSetSystemDefaultTheme();
+    } catch (e) {
+        // No-op in browser without Wails runtime
+    }
+}
+
+function syncThemeSelects() {
+    themeSelect.value = themePreference;
+    themeSelectHero.value = themePreference;
+}
+
 // Sidebar collapse
 function setSidebarCollapsed(collapsed) {
     if (collapsed) {
@@ -216,6 +256,31 @@ sidebarToggle.addEventListener('click', () => {
 });
 
 setSidebarCollapsed(localStorage.getItem('sidebarCollapsed') === '1');
+
+themePreference = localStorage.getItem('themePreference') || 'system';
+applyTheme(themePreference);
+syncThemeSelects();
+
+themeSelect.addEventListener('change', () => {
+    applyTheme(themeSelect.value);
+    syncThemeSelects();
+});
+themeSelectHero.addEventListener('change', () => {
+    applyTheme(themeSelectHero.value);
+    syncThemeSelects();
+});
+
+// Keep native window theme in sync when following system
+try {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        if (themePreference === 'system') {
+            applyTheme('system');
+            syncThemeSelects();
+        }
+    });
+} catch (e) {
+    // ignore
+}
 
 function showLanding() {
     landing.classList.add('visible');
