@@ -6,6 +6,7 @@ export namespace main {
 	    removeAudio: boolean;
 	    filename: string;
 	    outputDir: string;
+	    quality: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ExportOptions(source);
@@ -18,6 +19,7 @@ export namespace main {
 	        this.removeAudio = source["removeAudio"];
 	        this.filename = source["filename"];
 	        this.outputDir = source["outputDir"];
+	        this.quality = source["quality"];
 	    }
 	}
 	export class VideoInfo {

@@ -17,6 +17,11 @@ type TrimOptions struct {
 	StartTime   float64 // in seconds
 	EndTime     float64 // in seconds
 	RemoveAudio bool
+	// Export tuning (optional)
+	MaxHeight    int    // If >0, scales to min(MaxHeight, input height)
+	CRF          int    // Default 23
+	Preset       string // Default "medium"
+	AudioBitrate string // Default "128k" (ignored if RemoveAudio)
 }
 
 // Processor handles video processing with FFmpeg
@@ -61,14 +66,32 @@ func (p *Processor) TrimVideo(ctx context.Context, opts TrimOptions) error {
 	if opts.RemoveAudio {
 		args = append(args, "-an") // Remove audio
 	} else {
-		args = append(args, "-c:a", "aac", "-b:a", "128k") // Re-encode audio to AAC
+		audioBitrate := opts.AudioBitrate
+		if audioBitrate == "" {
+			audioBitrate = "128k"
+		}
+		args = append(args, "-c:a", "aac", "-b:a", audioBitrate) // Re-encode audio to AAC
+	}
+
+	if opts.MaxHeight > 0 {
+		// Avoid upscaling: clamp output height to input height.
+		args = append(args, "-vf", fmt.Sprintf("scale=-2:min(%d,ih)", opts.MaxHeight))
+	}
+
+	preset := opts.Preset
+	if preset == "" {
+		preset = "medium"
+	}
+	crf := opts.CRF
+	if crf == 0 {
+		crf = 23
 	}
 
 	// Video encoding settings
 	args = append(args,
 		"-c:v", "libx264", // H.264 codec
-		"-preset", "medium", // Balance between speed and quality
-		"-crf", "23", // Quality (lower = better, 23 is default)
+		"-preset", preset, // Balance between speed and quality
+		"-crf", strconv.Itoa(crf), // Quality (lower = better)
 		"-movflags", "+faststart", // Enable progressive download
 		opts.OutputPath,
 	)
@@ -119,13 +142,30 @@ func (p *Processor) TrimVideoWithProgress(ctx context.Context, opts TrimOptions,
 	if opts.RemoveAudio {
 		args = append(args, "-an")
 	} else {
-		args = append(args, "-c:a", "aac", "-b:a", "128k")
+		audioBitrate := opts.AudioBitrate
+		if audioBitrate == "" {
+			audioBitrate = "128k"
+		}
+		args = append(args, "-c:a", "aac", "-b:a", audioBitrate)
+	}
+
+	if opts.MaxHeight > 0 {
+		args = append(args, "-vf", fmt.Sprintf("scale=-2:min(%d,ih)", opts.MaxHeight))
+	}
+
+	preset := opts.Preset
+	if preset == "" {
+		preset = "medium"
+	}
+	crf := opts.CRF
+	if crf == 0 {
+		crf = 23
 	}
 
 	args = append(args,
 		"-c:v", "libx264",
-		"-preset", "medium",
-		"-crf", "23",
+		"-preset", preset,
+		"-crf", strconv.Itoa(crf),
 		"-movflags", "+faststart",
 		opts.OutputPath,
 	)

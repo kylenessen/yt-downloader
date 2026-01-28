@@ -9,6 +9,7 @@ let endTime = 0;
 let duration = 0;
 let outputDir = '';
 let ffmpegInstalled = false;
+let exportQuality = '720p';
 
 // Initialize the app
 document.querySelector('#app').innerHTML = `
@@ -72,6 +73,16 @@ document.querySelector('#app').innerHTML = `
                 <div class="form-group">
                     <label>Filename</label>
                     <input type="text" id="filenameInput" placeholder="clip name" />
+                </div>
+                <div class="form-group">
+                    <label>Quality</label>
+                    <select id="qualitySelect" class="select">
+                        <option value="1080p">1080p (high)</option>
+                        <option value="720p" selected>720p (recommended)</option>
+                        <option value="480p">480p (smaller)</option>
+                        <option value="360p">360p (smallest)</option>
+                        <option value="original">Original (no resize)</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label>Output</label>
@@ -175,6 +186,7 @@ const previewBtn = document.getElementById('previewBtn');
 
 const exportSection = document.getElementById('exportSection');
 const filenameInput = document.getElementById('filenameInput');
+const qualitySelect = document.getElementById('qualitySelect');
 const outputDirInput = document.getElementById('outputDirInput');
 const selectDirBtn = document.getElementById('selectDirBtn');
 const removeAudioCheck = document.getElementById('removeAudioCheck');
@@ -358,6 +370,7 @@ async function loadVideoFromURL(url) {
         showLayout();
         videoSection.classList.add('visible');
         exportSection.classList.add('visible');
+        qualitySelect.value = exportQuality;
 
         showStatus('Video loaded successfully!', 'success');
     } catch (err) {
@@ -547,6 +560,7 @@ exportBtn.addEventListener('click', async () => {
     }
 
     const filename = filenameInput.value.trim() || 'clip';
+    exportQuality = qualitySelect.value;
 
     try {
         exportBtn.disabled = true;
@@ -558,7 +572,8 @@ exportBtn.addEventListener('click', async () => {
             endTime: endTime,
             removeAudio: removeAudioCheck.checked,
             filename: filename,
-            outputDir: outputDir
+            outputDir: outputDir,
+            quality: exportQuality
         });
 
         showStatus('Clip exported successfully!', 'success');

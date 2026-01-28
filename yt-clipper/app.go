@@ -171,6 +171,7 @@ type ExportOptions struct {
 	RemoveAudio bool    `json:"removeAudio"`
 	Filename    string  `json:"filename"`
 	OutputDir   string  `json:"outputDir"`
+	Quality     string  `json:"quality"`
 }
 
 // ExportClip trims and saves a video clip
@@ -198,14 +199,45 @@ func (a *App) ExportClip(opts ExportOptions) error {
 	// Create processor
 	processor := ffmpeg.NewProcessor(a.ffmpegInstaller.GetFFmpegPath())
 
-	// Export with progress
-	err := processor.TrimVideoWithProgress(a.ctx, ffmpeg.TrimOptions{
+	trimOpts := ffmpeg.TrimOptions{
 		InputPath:   inputPath,
 		OutputPath:  outputPath,
 		StartTime:   opts.StartTime,
 		EndTime:     opts.EndTime,
 		RemoveAudio: opts.RemoveAudio,
-	}, func(progress float64) {
+	}
+
+	switch opts.Quality {
+	case "1080p":
+		trimOpts.MaxHeight = 1080
+		trimOpts.CRF = 21
+		trimOpts.Preset = "slow"
+		trimOpts.AudioBitrate = "160k"
+	case "720p":
+		trimOpts.MaxHeight = 720
+		trimOpts.CRF = 23
+		trimOpts.Preset = "medium"
+		trimOpts.AudioBitrate = "128k"
+	case "480p":
+		trimOpts.MaxHeight = 480
+		trimOpts.CRF = 26
+		trimOpts.Preset = "medium"
+		trimOpts.AudioBitrate = "112k"
+	case "360p":
+		trimOpts.MaxHeight = 360
+		trimOpts.CRF = 28
+		trimOpts.Preset = "fast"
+		trimOpts.AudioBitrate = "96k"
+	default:
+		// Original (no resize)
+		trimOpts.MaxHeight = 0
+		trimOpts.CRF = 23
+		trimOpts.Preset = "medium"
+		trimOpts.AudioBitrate = "128k"
+	}
+
+	// Export with progress
+	err := processor.TrimVideoWithProgress(a.ctx, trimOpts, func(progress float64) {
 		runtime.EventsEmit(a.ctx, "export:progress", progress)
 	})
 

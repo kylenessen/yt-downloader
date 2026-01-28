@@ -464,6 +464,21 @@ video {
     outline: none;
 }
 
+.select {
+    width: 100%;
+    padding: 10px 14px;
+    border: 2px solid var(--bg-tertiary);
+    border-radius: var(--border-radius);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 14px;
+    outline: none;
+}
+
+.select:focus {
+    border-color: var(--accent);
+}
+
 .form-group input[type="text"]:focus {
     border-color: var(--accent);
 }
