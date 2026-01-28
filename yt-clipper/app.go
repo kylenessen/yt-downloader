@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"yt-clipper/internal/ffmpeg"
@@ -174,6 +175,26 @@ type ExportOptions struct {
 	Quality     string  `json:"quality"`
 }
 
+func sanitizeFilename(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	name = strings.Map(func(r rune) rune {
+		switch r {
+		case '/', '\\', 0:
+			return '_'
+		default:
+			return r
+		}
+	}, name)
+	name = strings.Trim(name, ". ")
+	if len(name) > 120 {
+		name = name[:120]
+	}
+	return name
+}
+
 // ExportClip trims and saves a video clip
 func (a *App) ExportClip(opts ExportOptions) error {
 	if a.ffmpegInstaller == nil || !a.ffmpegInstaller.IsInstalled() {
@@ -187,14 +208,18 @@ func (a *App) ExportClip(opts ExportOptions) error {
 	}
 
 	// Build output path
-	filename := opts.Filename
+	filename := sanitizeFilename(opts.Filename)
 	if filename == "" {
 		filename = "clip"
 	}
 	if !filepath.IsAbs(opts.OutputDir) {
 		return fmt.Errorf("output directory must be an absolute path")
 	}
-	outputPath := filepath.Join(opts.OutputDir, filename+".mp4")
+	outputName := filename
+	if !strings.EqualFold(filepath.Ext(outputName), ".mp4") {
+		outputName += ".mp4"
+	}
+	outputPath := filepath.Join(opts.OutputDir, outputName)
 
 	// Create processor
 	processor := ffmpeg.NewProcessor(a.ffmpegInstaller.GetFFmpegPath())

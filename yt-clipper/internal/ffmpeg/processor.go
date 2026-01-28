@@ -1,6 +1,7 @@
 package ffmpeg
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -9,6 +10,48 @@ import (
 	"strconv"
 	"strings"
 )
+
+type limitedBuffer struct {
+	buf   bytes.Buffer
+	limit int
+}
+
+func (l *limitedBuffer) Write(p []byte) (int, error) {
+	if l.limit <= 0 {
+		return len(p), nil
+	}
+	remaining := l.limit - l.buf.Len()
+	if remaining <= 0 {
+		return len(p), nil
+	}
+	if len(p) > remaining {
+		_, _ = l.buf.Write(p[:remaining])
+		return len(p), nil
+	}
+	_, _ = l.buf.Write(p)
+	return len(p), nil
+}
+
+func (l *limitedBuffer) String() string {
+	return l.buf.String()
+}
+
+func quoteArgForDisplay(arg string) string {
+	needsQuote := strings.ContainsAny(arg, " \t\r\n\"'\\")
+	if !needsQuote {
+		return arg
+	}
+	return strconv.Quote(arg)
+}
+
+func formatCmdForDisplay(bin string, args []string) string {
+	parts := make([]string, 0, 1+len(args))
+	parts = append(parts, quoteArgForDisplay(bin))
+	for _, a := range args {
+		parts = append(parts, quoteArgForDisplay(a))
+	}
+	return strings.Join(parts, " ")
+}
 
 // TrimOptions specifies options for video trimming
 type TrimOptions struct {
@@ -75,7 +118,8 @@ func (p *Processor) TrimVideo(ctx context.Context, opts TrimOptions) error {
 
 	if opts.MaxHeight > 0 {
 		// Avoid upscaling: clamp output height to input height.
-		args = append(args, "-vf", fmt.Sprintf("scale=-2:min(%d,ih)", opts.MaxHeight))
+		// Note: the comma in min() must be escaped for ffmpeg's filtergraph parser.
+		args = append(args, "-vf", fmt.Sprintf("scale=-2:min(%d\\,ih)", opts.MaxHeight))
 	}
 
 	preset := opts.Preset
@@ -101,7 +145,7 @@ func (p *Processor) TrimVideo(ctx context.Context, opts TrimOptions) error {
 	// Capture stderr for error messages
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ffmpeg error: %w\nOutput: %s", err, string(output))
+		return fmt.Errorf("ffmpeg error: %w\nCommand: %s\nOutput: %s", err, formatCmdForDisplay(p.ffmpegPath, args), string(output))
 	}
 
 	return nil
@@ -133,6 +177,9 @@ func (p *Processor) TrimVideoWithProgress(ctx context.Context, opts TrimOptions,
 	// Build ffmpeg command with progress output
 	args := []string{
 		"-y",
+		"-hide_banner",
+		"-nostats",
+		"-loglevel", "error",
 		"-progress", "pipe:1", // Output progress to stdout
 		"-ss", formatTime(opts.StartTime),
 		"-i", opts.InputPath,
@@ -150,7 +197,8 @@ func (p *Processor) TrimVideoWithProgress(ctx context.Context, opts TrimOptions,
 	}
 
 	if opts.MaxHeight > 0 {
-		args = append(args, "-vf", fmt.Sprintf("scale=-2:min(%d,ih)", opts.MaxHeight))
+		// Note: the comma in min() must be escaped for ffmpeg's filtergraph parser.
+		args = append(args, "-vf", fmt.Sprintf("scale=-2:min(%d\\,ih)", opts.MaxHeight))
 	}
 
 	preset := opts.Preset
@@ -171,6 +219,8 @@ func (p *Processor) TrimVideoWithProgress(ctx context.Context, opts TrimOptions,
 	)
 
 	cmd := exec.CommandContext(ctx, p.ffmpegPath, args...)
+	stderrBuf := &limitedBuffer{limit: 64 * 1024}
+	cmd.Stderr = stderrBuf
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -214,7 +264,11 @@ func (p *Processor) TrimVideoWithProgress(ctx context.Context, opts TrimOptions,
 	}()
 
 	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("ffmpeg error: %w", err)
+		stderr := strings.TrimSpace(stderrBuf.String())
+		if stderr == "" {
+			return fmt.Errorf("ffmpeg error: %w\nCommand: %s", err, formatCmdForDisplay(p.ffmpegPath, args))
+		}
+		return fmt.Errorf("ffmpeg error: %w\nCommand: %s\nOutput: %s", err, formatCmdForDisplay(p.ffmpegPath, args), stderr)
 	}
 
 	if progressCb != nil {
