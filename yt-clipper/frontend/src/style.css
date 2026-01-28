@@ -100,7 +100,8 @@ body {
     overflow: hidden;
 }
 
-html, body {
+html,
+body {
     height: 100%;
 }
 
@@ -207,6 +208,20 @@ h1 {
 .landing-hint {
     font-size: 12px;
     color: var(--text-secondary);
+}
+
+.landing-progress {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+.landing-progress .progress-bar {
+    height: 8px;
+    border-radius: 4px;
+}
+
+.landing-progress .progress-text {
+    margin-top: 8px;
 }
 
 .sidebar {

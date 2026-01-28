@@ -34,7 +34,13 @@ document.querySelector('#app').innerHTML = `
                 <input type="text" class="url-input" id="urlInputHero" placeholder="https://www.youtube.com/watch?v=..." />
                 <button class="btn" id="loadBtnHero">Load</button>
             </div>
-            <div class="landing-hint">After loading, you can trim and export on the next screen.</div>
+            <div class="progress-container landing-progress" id="landingProgress">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="landingProgressFill"></div>
+                </div>
+                <div class="progress-text" id="landingProgressText">Downloading...</div>
+            </div>
+            <div class="landing-hint" id="landingHint">After loading, you can trim and export on the next screen.</div>
         </div>
     </div>
 
@@ -152,6 +158,10 @@ const landing = document.getElementById('landing');
 const urlInputHero = document.getElementById('urlInputHero');
 const loadBtnHero = document.getElementById('loadBtnHero');
 const themeToggle = document.getElementById('themeToggle');
+const landingProgress = document.getElementById('landingProgress');
+const landingProgressFill = document.getElementById('landingProgressFill');
+const landingProgressText = document.getElementById('landingProgressText');
+const landingHint = document.getElementById('landingHint');
 
 const urlInput = document.getElementById('urlInput');
 const loadBtn = document.getElementById('loadBtn');
@@ -404,9 +414,16 @@ async function loadVideoFromURL(url) {
     try {
         loadBtn.disabled = true;
         loadBtnHero.disabled = true;
+        
+        // Show progress on both landing and sidebar
         downloadProgress.classList.add('visible');
         downloadProgressFill.style.width = '0%';
         downloadProgressText.textContent = 'Downloading...';
+        
+        landingProgress.classList.add('visible');
+        landingProgressFill.style.width = '0%';
+        landingProgressText.textContent = 'Downloading...';
+        landingHint.style.display = 'none';
 
         videoInfo = await LoadVideo(url);
 
@@ -452,6 +469,8 @@ async function loadVideoFromURL(url) {
         loadBtn.disabled = false;
         loadBtnHero.disabled = false;
         downloadProgress.classList.remove('visible');
+        landingProgress.classList.remove('visible');
+        landingHint.style.display = '';
     }
 }
 
@@ -663,6 +682,10 @@ EventsOn('download:progress', (progress) => {
     const percent = Math.round(progress * 100);
     downloadProgressFill.style.width = `${percent}%`;
     downloadProgressText.textContent = `Downloading: ${percent}%`;
+    
+    // Update landing page progress too
+    landingProgressFill.style.width = `${percent}%`;
+    landingProgressText.textContent = `Downloading: ${percent}%`;
 });
 
 EventsOn('export:progress', (progress) => {
