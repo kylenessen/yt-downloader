@@ -414,12 +414,12 @@ async function loadVideoFromURL(url) {
     try {
         loadBtn.disabled = true;
         loadBtnHero.disabled = true;
-        
+
         // Show progress on both landing and sidebar
         downloadProgress.classList.add('visible');
         downloadProgressFill.style.width = '0%';
         downloadProgressText.textContent = 'Downloading...';
-        
+
         landingProgress.classList.add('visible');
         landingProgressFill.style.width = '0%';
         landingProgressText.textContent = 'Downloading...';
@@ -461,8 +461,6 @@ async function loadVideoFromURL(url) {
         videoSection.classList.add('visible');
         exportSection.classList.add('visible');
         qualitySelect.value = exportQuality;
-
-        showStatus('Video loaded successfully!', 'success');
     } catch (err) {
         showStatus(`Failed to load video: ${err}`, 'error');
     } finally {
@@ -579,7 +577,7 @@ playbackSlider.addEventListener('pointerup', async () => {
 videoPlayer.addEventListener('click', () => {
     if (!videoPlayer.src) return;
     if (videoPlayer.paused) {
-        videoPlayer.play().catch(() => {});
+        videoPlayer.play().catch(() => { });
     } else {
         videoPlayer.pause();
     }
@@ -682,7 +680,7 @@ EventsOn('download:progress', (progress) => {
     const percent = Math.round(progress * 100);
     downloadProgressFill.style.width = `${percent}%`;
     downloadProgressText.textContent = `Downloading: ${percent}%`;
-    
+
     // Update landing page progress too
     landingProgressFill.style.width = `${percent}%`;
     landingProgressText.textContent = `Downloading: ${percent}%`;
