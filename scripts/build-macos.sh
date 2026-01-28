@@ -23,26 +23,45 @@ fi
 cd "$PROJECT_DIR"
 wails build -platform "darwin/amd64,darwin/arm64"
 
-# Bundle FFmpeg into both app variants
-for ARCH in amd64 arm64; do
-    APP_PATH="$BUILD_DIR/yt-downloader-${ARCH}.app"
-    RESOURCES_DIR="$APP_PATH/Contents/Resources"
+# Rename and bundle FFmpeg into both app variants
+echo "📦 Packaging apps..."
+
+# Apple Silicon (arm64)
+if [ -d "$BUILD_DIR/yt-downloader-arm64.app" ]; then
+    rm -rf "$BUILD_DIR/YT Downloader.app" 2>/dev/null || true
+    mv "$BUILD_DIR/yt-downloader-arm64.app" "$BUILD_DIR/YT Downloader.app"
+    cp "$FFMPEG_SOURCE" "$BUILD_DIR/YT Downloader.app/Contents/Resources/ffmpeg"
+    chmod +x "$BUILD_DIR/YT Downloader.app/Contents/Resources/ffmpeg"
     
-    if [ -d "$APP_PATH" ]; then
-        echo "📦 Bundling FFmpeg into ${ARCH} app..."
-        cp "$FFMPEG_SOURCE" "$RESOURCES_DIR/ffmpeg"
-        chmod +x "$RESOURCES_DIR/ffmpeg"
-    fi
-done
+    # Create zip for Apple Silicon
+    echo "📦 Creating Apple Silicon zip..."
+    cd "$BUILD_DIR"
+    rm -f "YT-Downloader-macOS-Apple-Silicon.zip" 2>/dev/null || true
+    zip -r "YT-Downloader-macOS-Apple-Silicon.zip" "YT Downloader.app"
+    rm -rf "YT Downloader.app"
+    cd "$PROJECT_DIR"
+fi
+
+# Intel (amd64)
+if [ -d "$BUILD_DIR/yt-downloader-amd64.app" ]; then
+    rm -rf "$BUILD_DIR/YT Downloader.app" 2>/dev/null || true
+    mv "$BUILD_DIR/yt-downloader-amd64.app" "$BUILD_DIR/YT Downloader.app"
+    cp "$FFMPEG_SOURCE" "$BUILD_DIR/YT Downloader.app/Contents/Resources/ffmpeg"
+    chmod +x "$BUILD_DIR/YT Downloader.app/Contents/Resources/ffmpeg"
+    
+    # Create zip for Intel
+    echo "📦 Creating Intel zip..."
+    cd "$BUILD_DIR"
+    rm -f "YT-Downloader-macOS-Intel.zip" 2>/dev/null || true
+    zip -r "YT-Downloader-macOS-Intel.zip" "YT Downloader.app"
+    rm -rf "YT Downloader.app"
+    cd "$PROJECT_DIR"
+fi
 
 # Verify
 echo ""
 echo "✅ macOS builds complete!"
 echo ""
-echo "Built applications:"
-ls -lh "$BUILD_DIR/"*.app 2>/dev/null | while read line; do
-    echo "  $line"
-done
+echo "Built packages:"
+ls -lh "$BUILD_DIR/"*.zip 2>/dev/null || echo "  No zip files found"
 echo ""
-echo "Intel (amd64) size: $(du -sh "$BUILD_DIR/yt-downloader-amd64.app" 2>/dev/null | cut -f1)"
-echo "Apple Silicon (arm64) size: $(du -sh "$BUILD_DIR/yt-downloader-arm64.app" 2>/dev/null | cut -f1)"

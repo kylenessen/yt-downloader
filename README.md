@@ -6,9 +6,9 @@ A self-contained desktop app for downloading, trimming, and exporting YouTube vi
 
 | Platform | Download |
 |----------|----------|
-| **macOS (Apple Silicon)** | [Download for M1/M2/M3 Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/yt-downloader-macos-apple-silicon.zip) |
-| **macOS (Intel)** | [Download for Intel Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/yt-downloader-macos-intel.zip) |
-| **Windows** | [Download for Windows](https://github.com/kylenessen/yt-downloader/releases/latest/download/yt-downloader-windows.zip) |
+| **macOS (Apple Silicon)** | [Download for M1/M2/M3 Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/YT-Downloader-macOS-Apple-Silicon.zip) |
+| **macOS (Intel)** | [Download for Intel Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/YT-Downloader-macOS-Intel.zip) |
+| **Windows** | [Download for Windows](https://github.com/kylenessen/yt-downloader/releases/latest/download/YT-Downloader-Windows.zip) |
 
 > **Not sure which Mac you have?** Click  → About This Mac. If it says "Apple M1/M2/M3", use Apple Silicon. If it says "Intel", use Intel.
 
@@ -17,12 +17,18 @@ A self-contained desktop app for downloading, trimming, and exporting YouTube vi
 **macOS:**
 1. Download and unzip
 2. Drag `YT Downloader.app` to your Applications folder
-3. Right-click → Open (first time only, to bypass Gatekeeper)
+3. **Important:** The app is not signed with an Apple Developer certificate, so macOS will show a warning. To open it:
+   - **Option A (recommended):** Right-click (or Control-click) the app → select "Open" → click "Open" in the dialog
+   - **Option B (if you see "damaged" error):** Open Terminal and run:
+     ```bash
+     xattr -cr "/Applications/YT Downloader.app"
+     ```
+     Then open the app normally.
 
 **Windows:**
 1. Download and unzip
-2. Keep `yt-downloader.exe` and `ffmpeg.exe` in the same folder
-3. Run `yt-downloader.exe`
+2. Keep `YT Downloader.exe` and `ffmpeg.exe` in the same folder
+3. Run `YT Downloader.exe`
 
 ## Features
 

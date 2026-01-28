@@ -39,18 +39,17 @@ cd "$PROJECT_DIR"
 wails build -platform "windows/amd64"
 
 # Create distribution folder with exe and ffmpeg
-DIST_DIR="$BUILD_DIR/yt-downloader-windows"
+DIST_DIR="$BUILD_DIR/YT-Downloader-Windows"
+rm -rf "$DIST_DIR" 2>/dev/null || true
 mkdir -p "$DIST_DIR"
 
 echo "📦 Creating Windows distribution..."
 
 # Wails creates yt-downloader.exe when building for single platform
 if [ -f "$BUILD_DIR/yt-downloader.exe" ]; then
-    cp "$BUILD_DIR/yt-downloader.exe" "$DIST_DIR/yt-downloader.exe"
-    rm -f "$BUILD_DIR/yt-downloader.exe"
+    mv "$BUILD_DIR/yt-downloader.exe" "$DIST_DIR/YT Downloader.exe"
 elif [ -f "$BUILD_DIR/yt-downloader-amd64.exe" ]; then
-    cp "$BUILD_DIR/yt-downloader-amd64.exe" "$DIST_DIR/yt-downloader.exe"
-    rm -f "$BUILD_DIR/yt-downloader-amd64.exe"
+    mv "$BUILD_DIR/yt-downloader-amd64.exe" "$DIST_DIR/YT Downloader.exe"
 else
     echo "❌ Could not find Windows exe"
     exit 1
@@ -58,14 +57,18 @@ fi
 
 cp "$FFMPEG_SOURCE" "$DIST_DIR/ffmpeg.exe"
 
+# Create zip
+echo "📦 Creating Windows zip..."
+cd "$BUILD_DIR"
+rm -f "YT-Downloader-Windows.zip" 2>/dev/null || true
+zip -r "YT-Downloader-Windows.zip" "YT-Downloader-Windows"
+rm -rf "YT-Downloader-Windows"
+cd "$PROJECT_DIR"
+
 # Verify
 echo ""
 echo "✅ Windows build complete!"
 echo ""
-echo "Distribution folder: $DIST_DIR"
-echo "Contents:"
-ls -lh "$DIST_DIR/"
+echo "Built package:"
+ls -lh "$BUILD_DIR/YT-Downloader-Windows.zip" 2>/dev/null || echo "  No zip file found"
 echo ""
-echo "Total size: $(du -sh "$DIST_DIR" | cut -f1)"
-echo ""
-echo "📝 Note: Users should keep ffmpeg.exe in the same folder as yt-downloader.exe"
