@@ -90,22 +90,7 @@ func (i *Installer) GetFFmpegPath() string {
 
 // getBundledFFmpegPath returns the path to FFmpeg bundled inside the .app bundle
 func (i *Installer) getBundledFFmpegPath() string {
-	execPath, err := os.Executable()
-	if err != nil {
-		return ""
-	}
-
-	// The executable is at: MyApp.app/Contents/MacOS/myapp
-	// We want: MyApp.app/Contents/Resources/ffmpeg
-	// So we go up two directories from the executable, then into Resources
-	macosDir := filepath.Dir(execPath)
-	contentsDir := filepath.Dir(macosDir)
-	bundledPath := filepath.Join(contentsDir, "Resources", "ffmpeg")
-
-	if _, err := os.Stat(bundledPath); err == nil {
-		return bundledPath
-	}
-	return ""
+	return i.getBundledBinaryPath("ffmpeg")
 }
 
 // IsInstalled checks if FFmpeg is available
@@ -292,6 +277,64 @@ func (i *Installer) extractLinuxTarXz(archivePath string) error {
 	// Use system tar for .tar.xz extraction
 	cmd := exec.Command("tar", "-xf", archivePath, "-C", i.cacheDir, "--strip-components=2", "--wildcards", "*/bin/ffmpeg")
 	return cmd.Run()
+}
+
+// GetYtdlpPath returns the path to yt-dlp, checking bundled, cache, and system locations
+func (i *Installer) GetYtdlpPath() string {
+	// Check for bundled yt-dlp inside the app bundle (macOS)
+	if runtime.GOOS == "darwin" {
+		if bundledPath := i.getBundledBinaryPath("yt-dlp"); bundledPath != "" {
+			return bundledPath
+		}
+	}
+
+	// On Windows, check next to the executable
+	if runtime.GOOS == "windows" {
+		if exePath, err := os.Executable(); err == nil {
+			candidate := filepath.Join(filepath.Dir(exePath), "yt-dlp.exe")
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+		}
+	}
+
+	// Check system PATH
+	if path, err := exec.LookPath("yt-dlp"); err == nil {
+		return path
+	}
+
+	// macOS GUI apps don't inherit shell PATH, so check common installation paths
+	if runtime.GOOS == "darwin" {
+		commonPaths := []string{
+			"/opt/homebrew/bin/yt-dlp",
+			"/usr/local/bin/yt-dlp",
+			"/usr/bin/yt-dlp",
+		}
+		for _, p := range commonPaths {
+			if _, err := os.Stat(p); err == nil {
+				return p
+			}
+		}
+	}
+
+	return ""
+}
+
+// getBundledBinaryPath returns the path to a binary bundled inside the .app bundle
+func (i *Installer) getBundledBinaryPath(name string) string {
+	execPath, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+
+	macosDir := filepath.Dir(execPath)
+	contentsDir := filepath.Dir(macosDir)
+	bundledPath := filepath.Join(contentsDir, "Resources", name)
+
+	if _, err := os.Stat(bundledPath); err == nil {
+		return bundledPath
+	}
+	return ""
 }
 
 // GetCacheDir returns the cache directory path

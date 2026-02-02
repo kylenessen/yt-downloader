@@ -4,22 +4,23 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_DIR/build/bin"
-FFMPEG_DIR="$PROJECT_DIR/build/windows/Resources"
-FFMPEG_SOURCE="$FFMPEG_DIR/ffmpeg.exe"
+RESOURCES_DIR="$PROJECT_DIR/build/windows/Resources"
+FFMPEG_SOURCE="$RESOURCES_DIR/ffmpeg.exe"
+YTDLP_SOURCE="$RESOURCES_DIR/yt-dlp.exe"
 
 echo "🔨 Building YT Downloader for Windows..."
 
 # Check if FFmpeg binary exists in build resources
 if [ ! -f "$FFMPEG_SOURCE" ]; then
     echo "⬇️  FFmpeg for Windows not found. Downloading..."
-    mkdir -p "$FFMPEG_DIR"
-    
+    mkdir -p "$RESOURCES_DIR"
+
     # Download FFmpeg essentials build for Windows
     curl -L -o /tmp/ffmpeg-win.zip "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-    
+
     # Extract and find ffmpeg.exe
     unzip -o /tmp/ffmpeg-win.zip -d /tmp/ffmpeg-win/
-    
+
     # Find and copy ffmpeg.exe (it's in a versioned subfolder)
     FFMPEG_EXE=$(find /tmp/ffmpeg-win -name "ffmpeg.exe" | head -1)
     if [ -n "$FFMPEG_EXE" ]; then
@@ -29,9 +30,17 @@ if [ ! -f "$FFMPEG_SOURCE" ]; then
         echo "❌ Failed to find ffmpeg.exe in download"
         exit 1
     fi
-    
+
     # Cleanup
     rm -rf /tmp/ffmpeg-win /tmp/ffmpeg-win.zip
+fi
+
+# Check if yt-dlp binary exists in build resources
+if [ ! -f "$YTDLP_SOURCE" ]; then
+    echo "⬇️  yt-dlp for Windows not found. Downloading..."
+    mkdir -p "$RESOURCES_DIR"
+    curl -L -o "$YTDLP_SOURCE" "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+    echo "✅ yt-dlp for Windows downloaded"
 fi
 
 # Build the Wails app for Windows
@@ -56,6 +65,7 @@ else
 fi
 
 cp "$FFMPEG_SOURCE" "$DIST_DIR/ffmpeg.exe"
+cp "$YTDLP_SOURCE" "$DIST_DIR/yt-dlp.exe"
 
 # Create zip
 echo "📦 Creating Windows zip..."

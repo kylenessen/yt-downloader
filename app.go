@@ -128,7 +128,11 @@ func (a *App) LoadVideo(url string) (*VideoInfo, error) {
 	if a.ffmpegInstaller != nil && a.ffmpegInstaller.IsInstalled() {
 		ffmpegPath = a.ffmpegInstaller.GetFFmpegPath()
 	}
-	videoPath, err := a.downloader.DownloadForPreview(a.ctx, url, a.tempDir, ffmpegPath, func(progress float64) {
+	ytdlpPath := ""
+	if a.ffmpegInstaller != nil {
+		ytdlpPath = a.ffmpegInstaller.GetYtdlpPath()
+	}
+	videoPath, err := a.downloader.DownloadForPreview(a.ctx, url, a.tempDir, ffmpegPath, ytdlpPath, func(progress float64) {
 		runtime.EventsEmit(a.ctx, "download:progress", progress)
 	})
 	if err != nil {

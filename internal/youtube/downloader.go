@@ -99,7 +99,7 @@ func (d *Downloader) GetVideoInfo(ctx context.Context, url string) (*VideoInfo, 
 }
 
 // DownloadForPreview downloads a video for preview (best quality available)
-func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir string, ffmpegPath string, progressCb ProgressCallback) (string, error) {
+func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir string, ffmpegPath string, ytdlpPath string, progressCb ProgressCallback) (string, error) {
 	videoID, err := ExtractVideoID(url)
 	if err != nil {
 		return "", err
@@ -114,10 +114,9 @@ func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir
 	outPath := filepath.Join(destDir, baseName+"-preview.mp4")
 
 	// Try yt-dlp first - most reliable for high-quality downloads
-	ytdlpPath, _ := exec.LookPath("yt-dlp")
 	if ytdlpPath != "" && ffmpegPath != "" {
 		fmt.Printf("[DEBUG] Trying yt-dlp for high-quality download\n")
-		err := d.downloadWithYtdlp(ctx, url, outPath, ffmpegPath, progressCb)
+		err := d.downloadWithYtdlp(ctx, url, outPath, ffmpegPath, ytdlpPath, progressCb)
 		if err == nil {
 			return outPath, nil
 		}
@@ -202,12 +201,7 @@ func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir
 }
 
 // downloadWithYtdlp uses yt-dlp for reliable high-quality downloads
-func (d *Downloader) downloadWithYtdlp(ctx context.Context, url string, outPath string, ffmpegPath string, progressCb ProgressCallback) error {
-	ytdlpPath, err := exec.LookPath("yt-dlp")
-	if err != nil {
-		return fmt.Errorf("yt-dlp not found: %w", err)
-	}
-
+func (d *Downloader) downloadWithYtdlp(ctx context.Context, url string, outPath string, ffmpegPath string, ytdlpPath string, progressCb ProgressCallback) error {
 	// Download best H.264 video + AAC audio for Safari/WebKit compatibility
 	// Prefer H.264 (avc1) which Safari can play natively without re-encoding
 	args := []string{
@@ -229,7 +223,7 @@ func (d *Downloader) downloadWithYtdlp(ctx context.Context, url string, outPath 
 		progressCb(0.1)
 	}
 
-	err = cmd.Run()
+	err := cmd.Run()
 
 	if progressCb != nil {
 		progressCb(1.0)

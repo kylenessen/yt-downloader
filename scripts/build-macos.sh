@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_DIR/build/bin"
 FFMPEG_SOURCE="$PROJECT_DIR/build/darwin/Resources/ffmpeg"
+YTDLP_SOURCE="$PROJECT_DIR/build/darwin/Resources/yt-dlp"
 
 echo "🔨 Building YT Downloader for macOS (Intel + Apple Silicon)..."
 
@@ -17,6 +18,15 @@ if [ ! -f "$FFMPEG_SOURCE" ]; then
     chmod +x "$FFMPEG_SOURCE"
     rm /tmp/ffmpeg.zip
     echo "✅ FFmpeg downloaded"
+fi
+
+# Check if yt-dlp binary exists in build resources
+if [ ! -f "$YTDLP_SOURCE" ]; then
+    echo "⬇️  yt-dlp not found. Downloading..."
+    mkdir -p "$PROJECT_DIR/build/darwin/Resources"
+    curl -L -o "$YTDLP_SOURCE" "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"
+    chmod +x "$YTDLP_SOURCE"
+    echo "✅ yt-dlp downloaded"
 fi
 
 # Build the Wails app for both architectures
@@ -43,10 +53,16 @@ package_app() {
         local DEST_FFMPEG="$DEST_APP/Contents/Resources/ffmpeg"
         cp "$FFMPEG_SOURCE" "$DEST_FFMPEG"
         chmod +x "$DEST_FFMPEG"
-        
+
+        # Bundle yt-dlp
+        local DEST_YTDLP="$DEST_APP/Contents/Resources/yt-dlp"
+        cp "$YTDLP_SOURCE" "$DEST_YTDLP"
+        chmod +x "$DEST_YTDLP"
+
         echo "🔏 Code signing (ad-hoc)..."
-        # 1. Sign the nested ffmpeg binary first
+        # 1. Sign the nested binaries first
         codesign --force --sign - --options runtime "$DEST_FFMPEG"
+        codesign --force --sign - --options runtime "$DEST_YTDLP"
         
         # 2. Sign the main app bundle
         codesign --force --deep --sign - --options runtime "$DEST_APP"
