@@ -95,12 +95,14 @@ func (a *App) shutdown(ctx context.Context) {
 
 // VideoInfo holds video metadata for the frontend
 type VideoInfo struct {
-	ID        string  `json:"id"`
-	Title     string  `json:"title"`
-	Author    string  `json:"author"`
-	Duration  float64 `json:"duration"`
-	Thumbnail string  `json:"thumbnail"`
-	VideoURL  string  `json:"videoUrl"`
+	ID           string  `json:"id"`
+	Title        string  `json:"title"`
+	Author       string  `json:"author"`
+	Duration     float64 `json:"duration"`
+	Thumbnail    string  `json:"thumbnail"`
+	VideoURL     string  `json:"videoUrl"`
+	SourceWidth  int     `json:"sourceWidth"`
+	SourceHeight int     `json:"sourceHeight"`
 }
 
 // LoadVideo downloads a YouTube video and returns its info
@@ -140,12 +142,14 @@ func (a *App) LoadVideo(url string) (*VideoInfo, error) {
 	runtime.EventsEmit(a.ctx, "download:complete", nil)
 
 	return &VideoInfo{
-		ID:        info.ID,
-		Title:     info.Title,
-		Author:    info.Author,
-		Duration:  info.Duration,
-		Thumbnail: info.Thumbnail,
-		VideoURL:  a.previewBaseURL + a.videoServer.GetCurrentVideoURL(),
+		ID:           info.ID,
+		Title:        info.Title,
+		Author:       info.Author,
+		Duration:     info.Duration,
+		Thumbnail:    info.Thumbnail,
+		VideoURL:     a.previewBaseURL + a.videoServer.GetCurrentVideoURL(),
+		SourceWidth:  info.SourceWidth,
+		SourceHeight: info.SourceHeight,
 	}, nil
 }
 
@@ -167,12 +171,13 @@ func (a *App) SelectOutputDirectory() (string, error) {
 
 // ExportOptions specifies export settings
 type ExportOptions struct {
-	StartTime   float64 `json:"startTime"`
-	EndTime     float64 `json:"endTime"`
-	RemoveAudio bool    `json:"removeAudio"`
-	Filename    string  `json:"filename"`
-	OutputDir   string  `json:"outputDir"`
-	Quality     string  `json:"quality"`
+	StartTime     float64 `json:"startTime"`
+	EndTime       float64 `json:"endTime"`
+	RemoveAudio   bool    `json:"removeAudio"`
+	Filename      string  `json:"filename"`
+	OutputDir     string  `json:"outputDir"`
+	QualityPreset string  `json:"qualityPreset"` // "high", "medium", "low"
+	MaxResolution string  `json:"maxResolution"` // "original", "1080p", "720p", "480p", "360p"
 }
 
 func sanitizeFilename(name string) string {
@@ -232,33 +237,34 @@ func (a *App) ExportClip(opts ExportOptions) error {
 		RemoveAudio: opts.RemoveAudio,
 	}
 
-	switch opts.Quality {
+	// Quality preset controls encoding quality (CRF & preset)
+	switch opts.QualityPreset {
+	case "high":
+		trimOpts.CRF = 18
+		trimOpts.Preset = "slow"
+		trimOpts.AudioBitrate = "192k"
+	case "low":
+		trimOpts.CRF = 26
+		trimOpts.Preset = "veryfast"
+		trimOpts.AudioBitrate = "96k"
+	default: // "medium" or unspecified
+		trimOpts.CRF = 21
+		trimOpts.Preset = "medium"
+		trimOpts.AudioBitrate = "128k"
+	}
+
+	// Max resolution controls output size
+	switch opts.MaxResolution {
 	case "1080p":
 		trimOpts.MaxHeight = 1080
-		trimOpts.CRF = 21
-		trimOpts.Preset = "slow"
-		trimOpts.AudioBitrate = "160k"
 	case "720p":
 		trimOpts.MaxHeight = 720
-		trimOpts.CRF = 23
-		trimOpts.Preset = "medium"
-		trimOpts.AudioBitrate = "128k"
 	case "480p":
 		trimOpts.MaxHeight = 480
-		trimOpts.CRF = 26
-		trimOpts.Preset = "medium"
-		trimOpts.AudioBitrate = "112k"
 	case "360p":
 		trimOpts.MaxHeight = 360
-		trimOpts.CRF = 28
-		trimOpts.Preset = "fast"
-		trimOpts.AudioBitrate = "96k"
-	default:
-		// Original (no resize)
+	default: // "original" or unspecified
 		trimOpts.MaxHeight = 0
-		trimOpts.CRF = 23
-		trimOpts.Preset = "medium"
-		trimOpts.AudioBitrate = "128k"
 	}
 
 	// Export with progress

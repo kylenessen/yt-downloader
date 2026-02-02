@@ -9,7 +9,8 @@ let endTime = 0;
 let duration = 0;
 let outputDir = '';
 let ffmpegInstalled = false;
-let exportQuality = '720p';
+let qualityPreset = 'medium';
+let maxResolution = '720p';
 let themePreference = 'system';
 
 // Initialize the app
@@ -72,6 +73,7 @@ document.querySelector('#app').innerHTML = `
                     <div class="thumb-meta">
                         <div class="video-title" id="videoTitle"></div>
                         <div class="video-author" id="videoAuthor"></div>
+                        <div class="source-resolution" id="sourceResolution"></div>
                     </div>
                 </div>
             </div>
@@ -84,12 +86,20 @@ document.querySelector('#app').innerHTML = `
                 </div>
                 <div class="form-group">
                     <label>Quality</label>
-                    <select id="qualitySelect" class="select">
-                        <option value="1080p">1080p (high)</option>
+                    <select id="qualityPresetSelect" class="select">
+                        <option value="high">High (best quality, larger file)</option>
+                        <option value="medium" selected>Medium (recommended)</option>
+                        <option value="low">Low (smaller file)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Max Resolution</label>
+                    <select id="maxResolutionSelect" class="select">
+                        <option value="original">Original</option>
+                        <option value="1080p">1080p</option>
                         <option value="720p" selected>720p (recommended)</option>
-                        <option value="480p">480p (smaller)</option>
-                        <option value="360p">360p (smallest)</option>
-                        <option value="original">Original (no resize)</option>
+                        <option value="480p">480p</option>
+                        <option value="360p">360p</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -179,6 +189,7 @@ const layoutRoot = document.getElementById('layoutRoot');
 const sidebarToggle = document.getElementById('sidebarToggle');
 const thumbRow = document.getElementById('thumbRow');
 const thumbnailImg = document.getElementById('thumbnailImg');
+const sourceResolution = document.getElementById('sourceResolution');
 
 const videoSection = document.getElementById('videoSection');
 const videoPlayer = document.getElementById('videoPlayer');
@@ -199,7 +210,8 @@ const previewBtn = document.getElementById('previewBtn');
 
 const exportSection = document.getElementById('exportSection');
 const filenameInput = document.getElementById('filenameInput');
-const qualitySelect = document.getElementById('qualitySelect');
+const qualityPresetSelect = document.getElementById('qualityPresetSelect');
+const maxResolutionSelect = document.getElementById('maxResolutionSelect');
 const outputDirInput = document.getElementById('outputDirInput');
 const selectDirBtn = document.getElementById('selectDirBtn');
 const removeAudioCheck = document.getElementById('removeAudioCheck');
@@ -432,6 +444,14 @@ async function loadVideoFromURL(url) {
         videoPlayer.load();
         videoTitle.textContent = videoInfo.title;
         videoAuthor.textContent = videoInfo.author;
+
+        // Display source resolution
+        if (videoInfo.sourceHeight > 0) {
+            sourceResolution.textContent = `Source: ${videoInfo.sourceWidth}×${videoInfo.sourceHeight}`;
+        } else {
+            sourceResolution.textContent = '';
+        }
+
         filenameInput.value = videoInfo.title;
         urlInput.value = url;
         urlInputHero.value = url;
@@ -460,7 +480,8 @@ async function loadVideoFromURL(url) {
         setSidebarCollapsed(false);
         videoSection.classList.add('visible');
         exportSection.classList.add('visible');
-        qualitySelect.value = exportQuality;
+        qualityPresetSelect.value = qualityPreset;
+        maxResolutionSelect.value = maxResolution;
     } catch (err) {
         showStatus(`Failed to load video: ${err}`, 'error');
     } finally {
@@ -650,7 +671,8 @@ exportBtn.addEventListener('click', async () => {
     }
 
     const filename = filenameInput.value.trim() || 'clip';
-    exportQuality = qualitySelect.value;
+    qualityPreset = qualityPresetSelect.value;
+    maxResolution = maxResolutionSelect.value;
 
     try {
         exportBtn.disabled = true;
@@ -663,7 +685,8 @@ exportBtn.addEventListener('click', async () => {
             removeAudio: removeAudioCheck.checked,
             filename: filename,
             outputDir: outputDir,
-            quality: exportQuality
+            qualityPreset: qualityPreset,
+            maxResolution: maxResolution
         });
 
         showStatus('Clip exported successfully!', 'success');

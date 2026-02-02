@@ -6,7 +6,8 @@ export namespace main {
 	    removeAudio: boolean;
 	    filename: string;
 	    outputDir: string;
-	    quality: string;
+	    qualityPreset: string;
+	    maxResolution: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ExportOptions(source);
@@ -19,7 +20,8 @@ export namespace main {
 	        this.removeAudio = source["removeAudio"];
 	        this.filename = source["filename"];
 	        this.outputDir = source["outputDir"];
-	        this.quality = source["quality"];
+	        this.qualityPreset = source["qualityPreset"];
+	        this.maxResolution = source["maxResolution"];
 	    }
 	}
 	export class VideoInfo {
@@ -29,6 +31,8 @@ export namespace main {
 	    duration: number;
 	    thumbnail: string;
 	    videoUrl: string;
+	    sourceWidth: number;
+	    sourceHeight: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new VideoInfo(source);
@@ -42,6 +46,8 @@ export namespace main {
 	        this.duration = source["duration"];
 	        this.thumbnail = source["thumbnail"];
 	        this.videoUrl = source["videoUrl"];
+	        this.sourceWidth = source["sourceWidth"];
+	        this.sourceHeight = source["sourceHeight"];
 	    }
 	}
 
@@ -73,6 +79,8 @@ export namespace youtube {
 	    duration: number;
 	    thumbnail: string;
 	    description: string;
+	    sourceWidth: number;
+	    sourceHeight: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new VideoInfo(source);
@@ -86,6 +94,8 @@ export namespace youtube {
 	        this.duration = source["duration"];
 	        this.thumbnail = source["thumbnail"];
 	        this.description = source["description"];
+	        this.sourceWidth = source["sourceWidth"];
+	        this.sourceHeight = source["sourceHeight"];
 	    }
 	}
 

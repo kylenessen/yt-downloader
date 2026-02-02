@@ -16,12 +16,14 @@ import (
 
 // VideoInfo holds metadata about a YouTube video
 type VideoInfo struct {
-	ID          string  `json:"id"`
-	Title       string  `json:"title"`
-	Author      string  `json:"author"`
-	Duration    float64 `json:"duration"` // in seconds
-	Thumbnail   string  `json:"thumbnail"`
-	Description string  `json:"description"`
+	ID           string  `json:"id"`
+	Title        string  `json:"title"`
+	Author       string  `json:"author"`
+	Duration     float64 `json:"duration"` // in seconds
+	Thumbnail    string  `json:"thumbnail"`
+	Description  string  `json:"description"`
+	SourceWidth  int     `json:"sourceWidth"`
+	SourceHeight int     `json:"sourceHeight"`
 }
 
 // ProgressCallback is called with download progress (0.0 to 1.0)
@@ -75,17 +77,28 @@ func (d *Downloader) GetVideoInfo(ctx context.Context, url string) (*VideoInfo, 
 		thumbnail = video.Thumbnails[len(video.Thumbnails)-1].URL
 	}
 
+	// Get source resolution from best available format
+	sourceWidth, sourceHeight := 0, 0
+	for _, f := range video.Formats {
+		if f.Width > sourceWidth {
+			sourceWidth = f.Width
+			sourceHeight = f.Height
+		}
+	}
+
 	return &VideoInfo{
-		ID:          video.ID,
-		Title:       sanitizeFilename(video.Title),
-		Author:      video.Author,
-		Duration:    video.Duration.Seconds(),
-		Thumbnail:   thumbnail,
-		Description: video.Description,
+		ID:           video.ID,
+		Title:        sanitizeFilename(video.Title),
+		Author:       video.Author,
+		Duration:     video.Duration.Seconds(),
+		Thumbnail:    thumbnail,
+		Description:  video.Description,
+		SourceWidth:  sourceWidth,
+		SourceHeight: sourceHeight,
 	}, nil
 }
 
-// DownloadForPreview downloads a video for preview (720p or best available)
+// DownloadForPreview downloads a video for preview (best quality available)
 func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir string, ffmpegPath string, progressCb ProgressCallback) (string, error) {
 	videoID, err := ExtractVideoID(url)
 	if err != nil {
@@ -97,16 +110,35 @@ func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir
 		return "", fmt.Errorf("failed to get video: %w", err)
 	}
 
+	baseName := sanitizeFilename(video.Title)
+	outPath := filepath.Join(destDir, baseName+"-preview.mp4")
+
+	// Try yt-dlp first - most reliable for high-quality downloads
+	ytdlpPath, _ := exec.LookPath("yt-dlp")
+	if ytdlpPath != "" && ffmpegPath != "" {
+		fmt.Printf("[DEBUG] Trying yt-dlp for high-quality download\n")
+		err := d.downloadWithYtdlp(ctx, url, outPath, ffmpegPath, progressCb)
+		if err == nil {
+			return outPath, nil
+		}
+		fmt.Printf("[DEBUG] yt-dlp failed: %v, falling back to Go library\n", err)
+	}
+
 	// If ffmpeg is available, prefer muxing high-quality separate streams (video-only + audio-only).
 	// This makes export quality options meaningful because progressive (audio+video) streams are often capped at 720p or lower.
 	if ffmpegPath != "" {
 		v, a := selectMuxFormats(video.Formats)
 		if v != nil && a != nil {
+			fmt.Printf("[DEBUG] Selected video format: %dx%d, mime=%s, bitrate=%d\n", v.Width, v.Height, v.MimeType, v.Bitrate)
+			fmt.Printf("[DEBUG] Selected audio format: mime=%s, bitrate=%d\n", a.MimeType, a.Bitrate)
 			out, muxErr := d.downloadAndMux(ctx, video, v, a, destDir, ffmpegPath, progressCb)
 			if muxErr == nil {
 				return out, nil
 			}
+			fmt.Printf("[DEBUG] Mux failed: %v, falling back to progressive stream\n", muxErr)
 			// Fall back to single-stream download if mux fails for any reason.
+		} else {
+			fmt.Printf("[DEBUG] No suitable mux formats found (video=%v, audio=%v)\n", v != nil, a != nil)
 		}
 	}
 
@@ -169,6 +201,52 @@ func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir
 	return destPath, nil
 }
 
+// downloadWithYtdlp uses yt-dlp for reliable high-quality downloads
+func (d *Downloader) downloadWithYtdlp(ctx context.Context, url string, outPath string, ffmpegPath string, progressCb ProgressCallback) error {
+	ytdlpPath, err := exec.LookPath("yt-dlp")
+	if err != nil {
+		return fmt.Errorf("yt-dlp not found: %w", err)
+	}
+
+	// Download best H.264 video + AAC audio for Safari/WebKit compatibility
+	// Prefer H.264 (avc1) which Safari can play natively without re-encoding
+	args := []string{
+		"-f", "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[vcodec^=avc1]+bestaudio/best[vcodec^=avc1]/bestvideo+bestaudio/best",
+		"--merge-output-format", "mp4",
+		"--ffmpeg-location", filepath.Dir(ffmpegPath),
+		"-o", outPath,
+		"--no-playlist",
+		"--no-warnings",
+		url,
+	}
+
+	cmd := exec.CommandContext(ctx, ytdlpPath, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	// Report some progress (yt-dlp progress is hard to parse, so we fake it)
+	if progressCb != nil {
+		progressCb(0.1)
+	}
+
+	err = cmd.Run()
+
+	if progressCb != nil {
+		progressCb(1.0)
+	}
+
+	if err != nil {
+		return fmt.Errorf("yt-dlp error: %w: %s", err, stderr.String())
+	}
+
+	// Verify output exists
+	if _, err := os.Stat(outPath); os.IsNotExist(err) {
+		return fmt.Errorf("output file not created")
+	}
+
+	return nil
+}
+
 func weightedProgress(parent ProgressCallback, base float64, weight float64) ProgressCallback {
 	return func(p float64) {
 		if parent == nil {
@@ -223,7 +301,7 @@ func (d *Downloader) downloadAndMux(ctx context.Context, video *youtube.Video, v
 		if strings.Contains(audioFmt.MimeType, "audio/mp4") {
 			audioExt = ".m4a"
 		} else {
-			audioExt = ".m4a"
+			audioExt = ".webm"
 		}
 	}
 
@@ -243,20 +321,32 @@ func (d *Downloader) downloadAndMux(ctx context.Context, video *youtube.Video, v
 		return "", fmt.Errorf("failed to download audio stream: %w", err)
 	}
 
-	// Fast mux into mp4. Requires H.264 + AAC for best compatibility.
-	cmd := exec.CommandContext(ctx, ffmpegPath,
-		"-y",
-		"-hide_banner",
-		"-loglevel", "error",
-		"-i", videoPath,
-		"-i", audioPath,
-		"-map", "0:v:0",
-		"-map", "1:a:0",
-		"-c", "copy",
-		"-movflags", "+faststart",
-		"-shortest",
-		outPath,
-	)
+	// Determine if we need to transcode video (VP9/AV1 needs conversion to H.264 for Safari/WebKit)
+	needsVideoTranscode := strings.Contains(videoFmt.MimeType, "vp9") || strings.Contains(videoFmt.MimeType, "vp09") ||
+		strings.Contains(videoFmt.MimeType, "av01") || strings.Contains(videoFmt.MimeType, "webm")
+	needsAudioTranscode := strings.Contains(audioFmt.MimeType, "opus") || strings.Contains(audioFmt.MimeType, "webm")
+
+	var args []string
+	args = append(args, "-y", "-hide_banner", "-loglevel", "error")
+	args = append(args, "-i", videoPath, "-i", audioPath)
+	args = append(args, "-map", "0:v:0", "-map", "1:a:0")
+
+	if needsVideoTranscode {
+		// Transcode to H.264 with high quality settings
+		args = append(args, "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p")
+	} else {
+		args = append(args, "-c:v", "copy")
+	}
+
+	if needsAudioTranscode {
+		args = append(args, "-c:a", "aac", "-b:a", "192k")
+	} else {
+		args = append(args, "-c:a", "copy")
+	}
+
+	args = append(args, "-movflags", "+faststart", "-shortest", outPath)
+
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
 	var stderr bytes.Buffer
 	cmd.Stdout = nil
 	cmd.Stderr = &stderr
@@ -320,7 +410,8 @@ func selectFormat(formats youtube.FormatList) *youtube.Format {
 }
 
 func selectMuxFormats(formats youtube.FormatList) (*youtube.Format, *youtube.Format) {
-	// Video-only: prefer MP4 + H.264 (avc1), highest resolution/bitrate.
+	// Video-only: prefer highest resolution, accepting MP4/H.264, WebM/VP9, or MP4/AV1.
+	// Modern YouTube often serves highest quality in VP9 or AV1 rather than H.264.
 	var videoOnly []youtube.Format
 	for _, f := range formats {
 		if f.AudioChannels != 0 {
@@ -329,16 +420,16 @@ func selectMuxFormats(formats youtube.FormatList) (*youtube.Format, *youtube.For
 		if !strings.Contains(f.MimeType, "video") {
 			continue
 		}
-		if !strings.Contains(f.MimeType, "video/mp4") {
-			continue
-		}
-		if !strings.Contains(f.MimeType, "avc1") {
+		// Accept mp4 (avc1/av01) or webm (vp9)
+		isMP4 := strings.Contains(f.MimeType, "video/mp4")
+		isWebM := strings.Contains(f.MimeType, "video/webm")
+		if !isMP4 && !isWebM {
 			continue
 		}
 		videoOnly = append(videoOnly, f)
 	}
 
-	// Audio-only: prefer MP4/AAC (mp4a), highest bitrate.
+	// Audio-only: prefer MP4/AAC (mp4a), fall back to WebM/Opus if needed.
 	var audioOnly []youtube.Format
 	for _, f := range formats {
 		if f.AudioChannels <= 0 {
@@ -347,10 +438,10 @@ func selectMuxFormats(formats youtube.FormatList) (*youtube.Format, *youtube.For
 		if !strings.Contains(f.MimeType, "audio") {
 			continue
 		}
-		if !strings.Contains(f.MimeType, "audio/mp4") {
-			continue
-		}
-		if !strings.Contains(f.MimeType, "mp4a") {
+		// Accept mp4 audio or webm audio
+		isMP4 := strings.Contains(f.MimeType, "audio/mp4")
+		isWebM := strings.Contains(f.MimeType, "audio/webm")
+		if !isMP4 && !isWebM {
 			continue
 		}
 		audioOnly = append(audioOnly, f)
