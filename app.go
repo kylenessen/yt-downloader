@@ -132,6 +132,7 @@ func (a *App) LoadVideo(url string) (*VideoInfo, error) {
 	if a.ffmpegInstaller != nil {
 		ytdlpPath = a.ffmpegInstaller.GetYtdlpPath()
 	}
+	runtime.LogInfo(a.ctx, fmt.Sprintf("Download paths: ffmpeg=%q yt-dlp=%q", ffmpegPath, ytdlpPath))
 	videoPath, err := a.downloader.DownloadForPreview(a.ctx, url, a.tempDir, ffmpegPath, ytdlpPath, func(progress float64) {
 		runtime.EventsEmit(a.ctx, "download:progress", progress)
 	})

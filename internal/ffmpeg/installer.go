@@ -48,6 +48,9 @@ func (i *Installer) GetFFmpegPath() string {
 	// First, check for bundled FFmpeg inside the app bundle (macOS)
 	if runtime.GOOS == "darwin" {
 		if bundledPath := i.getBundledFFmpegPath(); bundledPath != "" {
+			// Ensure the bundled binary is executable (quarantine can block it)
+			_ = os.Chmod(bundledPath, 0755)
+			_ = exec.Command("xattr", "-d", "com.apple.quarantine", bundledPath).Run()
 			return bundledPath
 		}
 	}
@@ -284,7 +287,9 @@ func (i *Installer) GetYtdlpPath() string {
 	// Check for bundled yt-dlp inside the app bundle (macOS)
 	if runtime.GOOS == "darwin" {
 		if bundledPath := i.getBundledBinaryPath("yt-dlp"); bundledPath != "" {
-			return bundledPath
+			if preparedPath := i.prepareBundledBinary(bundledPath); preparedPath != "" {
+				return preparedPath
+			}
 		}
 	}
 
@@ -318,6 +323,28 @@ func (i *Installer) GetYtdlpPath() string {
 	}
 
 	return ""
+}
+
+// prepareBundledBinary ensures a bundled binary is executable by removing macOS
+// quarantine attributes and setting proper permissions. Returns the path if the
+// binary can be executed, or empty string if it cannot.
+func (i *Installer) prepareBundledBinary(binaryPath string) string {
+	// Ensure the binary is executable
+	_ = os.Chmod(binaryPath, 0755)
+
+	// Remove macOS quarantine attribute that blocks execution of downloaded binaries
+	if runtime.GOOS == "darwin" {
+		_ = exec.Command("xattr", "-d", "com.apple.quarantine", binaryPath).Run()
+	}
+
+	// Verify the binary actually runs
+	cmd := exec.Command(binaryPath, "--version")
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("[DEBUG] Bundled binary at %s failed verification: %v\n", binaryPath, err)
+		return ""
+	}
+
+	return binaryPath
 }
 
 // getBundledBinaryPath returns the path to a binary bundled inside the .app bundle
