@@ -22,7 +22,15 @@ I recommend 720p, as most projectors max out at this resolution. Of course, if y
 
 ### Installation
 
-**macOS:**
+**macOS (recommended — one-line install):**
+
+Open Terminal and paste:
+```bash
+curl -sSL https://raw.githubusercontent.com/kylenessen/yt-downloader/main/scripts/install-mac.sh | bash
+```
+This automatically downloads the correct version for your Mac, installs it to Applications, and handles macOS security so the app opens without issues.
+
+**macOS (manual):**
 
 1. Download and unzip
 2. Drag `YT Downloader.app` to your Applications folder

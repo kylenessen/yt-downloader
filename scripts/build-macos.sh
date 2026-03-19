@@ -4,26 +4,39 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_DIR/build/bin"
-FFMPEG_SOURCE="$PROJECT_DIR/build/darwin/Resources/ffmpeg"
-YTDLP_SOURCE="$PROJECT_DIR/build/darwin/Resources/yt-dlp"
+RESOURCES_DIR="$PROJECT_DIR/build/darwin/Resources"
+
+# FFmpeg static builds from GitHub (architecture-specific)
+FFMPEG_ARM64_URL="https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-arm64.gz"
+FFMPEG_AMD64_URL="https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-x64.gz"
 
 echo "🔨 Building YT Downloader for macOS (Intel + Apple Silicon)..."
 
-# Check if FFmpeg binary exists in build resources
-if [ ! -f "$FFMPEG_SOURCE" ]; then
-    echo "⬇️  FFmpeg not found. Downloading..."
-    mkdir -p "$PROJECT_DIR/build/darwin/Resources"
-    curl -L -o /tmp/ffmpeg.zip "https://evermeet.cx/ffmpeg/getrelease/zip"
-    unzip -o /tmp/ffmpeg.zip -d "$PROJECT_DIR/build/darwin/Resources/"
-    chmod +x "$FFMPEG_SOURCE"
-    rm /tmp/ffmpeg.zip
-    echo "✅ FFmpeg downloaded"
+mkdir -p "$RESOURCES_DIR"
+
+# Download architecture-specific FFmpeg binaries
+if [ ! -f "$RESOURCES_DIR/ffmpeg-arm64" ]; then
+    echo "⬇️  FFmpeg (ARM64) not found. Downloading..."
+    curl -L -o /tmp/ffmpeg-arm64.gz "$FFMPEG_ARM64_URL"
+    gunzip -c /tmp/ffmpeg-arm64.gz > "$RESOURCES_DIR/ffmpeg-arm64"
+    chmod +x "$RESOURCES_DIR/ffmpeg-arm64"
+    rm /tmp/ffmpeg-arm64.gz
+    echo "✅ FFmpeg (ARM64) downloaded"
 fi
 
-# Check if yt-dlp binary exists in build resources
+if [ ! -f "$RESOURCES_DIR/ffmpeg-amd64" ]; then
+    echo "⬇️  FFmpeg (Intel) not found. Downloading..."
+    curl -L -o /tmp/ffmpeg-amd64.gz "$FFMPEG_AMD64_URL"
+    gunzip -c /tmp/ffmpeg-amd64.gz > "$RESOURCES_DIR/ffmpeg-amd64"
+    chmod +x "$RESOURCES_DIR/ffmpeg-amd64"
+    rm /tmp/ffmpeg-amd64.gz
+    echo "✅ FFmpeg (Intel) downloaded"
+fi
+
+# Check if yt-dlp binary exists (universal macOS binary)
+YTDLP_SOURCE="$RESOURCES_DIR/yt-dlp"
 if [ ! -f "$YTDLP_SOURCE" ]; then
     echo "⬇️  yt-dlp not found. Downloading..."
-    mkdir -p "$PROJECT_DIR/build/darwin/Resources"
     curl -L -o "$YTDLP_SOURCE" "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"
     chmod +x "$YTDLP_SOURCE"
     echo "✅ yt-dlp downloaded"
@@ -39,19 +52,19 @@ package_app() {
     local ZIP_NAME=$2
     local SOURCE_APP="$BUILD_DIR/yt-downloader-${ARCH}.app"
     local DEST_APP="$BUILD_DIR/YT Downloader.app"
-    
+
     if [ -d "$SOURCE_APP" ]; then
         echo "📦 Packaging ${ARCH} build..."
-        
+
         # Remove any existing destination
         rm -rf "$DEST_APP" 2>/dev/null || true
-        
+
         # Rename the app
         mv "$SOURCE_APP" "$DEST_APP"
-        
-        # Bundle FFmpeg
+
+        # Bundle architecture-specific FFmpeg
         local DEST_FFMPEG="$DEST_APP/Contents/Resources/ffmpeg"
-        cp "$FFMPEG_SOURCE" "$DEST_FFMPEG"
+        cp "$RESOURCES_DIR/ffmpeg-${ARCH}" "$DEST_FFMPEG"
         chmod +x "$DEST_FFMPEG"
 
         # Bundle yt-dlp

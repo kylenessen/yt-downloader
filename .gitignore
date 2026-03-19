@@ -7,7 +7,8 @@ node_modules
 frontend/dist
 
 # Platform-specific resources (downloaded during build)
-build/darwin/Resources/ffmpeg
+build/darwin/Resources/ffmpeg-arm64
+build/darwin/Resources/ffmpeg-amd64
 build/windows/Resources/
 
 # OS files

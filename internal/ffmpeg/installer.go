@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"archive/zip"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -14,10 +15,11 @@ import (
 )
 
 const (
-	// Download URLs for ffmpeg binaries
-	macFFmpegURL     = "https://evermeet.cx/ffmpeg/getrelease/zip"
-	windowsFFmpegURL = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
-	linuxFFmpegURL   = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
+	// Download URLs for ffmpeg binaries (architecture-specific for macOS)
+	macFFmpegARM64URL = "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-arm64.gz"
+	macFFmpegAMD64URL = "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-x64.gz"
+	windowsFFmpegURL  = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+	linuxFFmpegURL    = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
 )
 
 // ProgressCallback reports installation progress (0.0 to 1.0)
@@ -113,7 +115,11 @@ func (i *Installer) Install(ctx context.Context, progressCb ProgressCallback) er
 	var downloadURL string
 	switch runtime.GOOS {
 	case "darwin":
-		downloadURL = macFFmpegURL
+		if runtime.GOARCH == "arm64" {
+			downloadURL = macFFmpegARM64URL
+		} else {
+			downloadURL = macFFmpegAMD64URL
+		}
 	case "windows":
 		downloadURL = windowsFFmpegURL
 	case "linux":
@@ -140,7 +146,7 @@ func (i *Installer) Install(ctx context.Context, progressCb ProgressCallback) er
 	// Extract based on platform
 	switch runtime.GOOS {
 	case "darwin":
-		if err := i.extractMacZip(archivePath); err != nil {
+		if err := i.extractMacGz(archivePath); err != nil {
 			return fmt.Errorf("failed to extract FFmpeg: %w", err)
 		}
 	case "windows":
@@ -216,34 +222,28 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func (i *Installer) extractMacZip(archivePath string) error {
-	r, err := zip.OpenReader(archivePath)
+func (i *Installer) extractMacGz(archivePath string) error {
+	inFile, err := os.Open(archivePath)
 	if err != nil {
 		return err
 	}
-	defer r.Close()
+	defer inFile.Close()
 
-	for _, f := range r.File {
-		if strings.HasSuffix(f.Name, "ffmpeg") || f.Name == "ffmpeg" {
-			rc, err := f.Open()
-			if err != nil {
-				return err
-			}
-			defer rc.Close()
-
-			destPath := filepath.Join(i.cacheDir, "ffmpeg")
-			outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
-			if err != nil {
-				return err
-			}
-			defer outFile.Close()
-
-			_, err = io.Copy(outFile, rc)
-			return err
-		}
+	gzReader, err := gzip.NewReader(inFile)
+	if err != nil {
+		return err
 	}
+	defer gzReader.Close()
 
-	return fmt.Errorf("ffmpeg binary not found in archive")
+	destPath := filepath.Join(i.cacheDir, "ffmpeg")
+	outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	if err != nil {
+		return err
+	}
+	defer outFile.Close()
+
+	_, err = io.Copy(outFile, gzReader)
+	return err
 }
 
 func (i *Installer) extractWindowsZip(archivePath string) error {
