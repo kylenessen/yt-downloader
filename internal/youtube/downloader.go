@@ -26,6 +26,14 @@ type VideoInfo struct {
 	SourceHeight int     `json:"sourceHeight"`
 }
 
+// DownloadResult holds the download outcome with quality metadata
+type DownloadResult struct {
+	FilePath string `json:"filePath"`
+	Method   string `json:"method"`   // "yt-dlp", "mux", "progressive"
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+}
+
 // ProgressCallback is called with download progress (0.0 to 1.0)
 type ProgressCallback func(progress float64)
 
@@ -99,15 +107,15 @@ func (d *Downloader) GetVideoInfo(ctx context.Context, url string) (*VideoInfo, 
 }
 
 // DownloadForPreview downloads a video for preview (best quality available)
-func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir string, ffmpegPath string, ytdlpPath string, progressCb ProgressCallback) (string, error) {
+func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir string, ffmpegPath string, ytdlpPath string, progressCb ProgressCallback) (*DownloadResult, error) {
 	videoID, err := ExtractVideoID(url)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	video, err := d.client.GetVideoContext(ctx, videoID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get video: %w", err)
+		return nil, fmt.Errorf("failed to get video: %w", err)
 	}
 
 	baseName := sanitizeFilename(video.Title)
@@ -118,7 +126,9 @@ func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir
 		fmt.Printf("[DEBUG] Trying yt-dlp for high-quality download\n")
 		err := d.downloadWithYtdlp(ctx, url, outPath, ffmpegPath, ytdlpPath, progressCb)
 		if err == nil {
-			return outPath, nil
+			// Probe the downloaded file for resolution
+			w, h := probeResolution(ffmpegPath, outPath)
+			return &DownloadResult{FilePath: outPath, Method: "yt-dlp", Width: w, Height: h}, nil
 		}
 		fmt.Printf("[DEBUG] yt-dlp failed: %v, falling back to Go library\n", err)
 	}
@@ -132,7 +142,7 @@ func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir
 			fmt.Printf("[DEBUG] Selected audio format: mime=%s, bitrate=%d\n", a.MimeType, a.Bitrate)
 			out, muxErr := d.downloadAndMux(ctx, video, v, a, destDir, ffmpegPath, progressCb)
 			if muxErr == nil {
-				return out, nil
+				return &DownloadResult{FilePath: out, Method: "mux", Width: v.Width, Height: v.Height}, nil
 			}
 			fmt.Printf("[DEBUG] Mux failed: %v, falling back to progressive stream\n", muxErr)
 			// Fall back to single-stream download if mux fails for any reason.
@@ -141,16 +151,19 @@ func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir
 		}
 	}
 
-	// Find a suitable format (prefer 720p with audio, fallback to best)
+	// Find best available progressive format (has both audio+video in one stream).
+	// YouTube caps these at 720p or lower, so this is the worst-case fallback.
 	format := selectFormat(video.Formats)
 	if format == nil {
-		return "", fmt.Errorf("no suitable video format found")
+		return nil, fmt.Errorf("no suitable video format found")
 	}
+
+	fmt.Printf("[DEBUG] Falling back to progressive stream: %dx%d, mime=%s\n", format.Width, format.Height, format.MimeType)
 
 	// Get the stream
 	stream, contentLength, err := d.client.GetStreamContext(ctx, video, format)
 	if err != nil {
-		return "", fmt.Errorf("failed to get stream: %w", err)
+		return nil, fmt.Errorf("failed to get stream: %w", err)
 	}
 	defer stream.Close()
 
@@ -163,7 +176,7 @@ func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir
 	destPath := filepath.Join(destDir, filename)
 	file, err := os.Create(destPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to create file: %w", err)
+		return nil, fmt.Errorf("failed to create file: %w", err)
 	}
 	defer file.Close()
 
@@ -183,8 +196,10 @@ func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir
 
 	if err != nil {
 		os.Remove(destPath)
-		return "", fmt.Errorf("failed to download video: %w", err)
+		return nil, fmt.Errorf("failed to download video: %w", err)
 	}
+
+	result := &DownloadResult{FilePath: destPath, Method: "progressive", Width: format.Width, Height: format.Height}
 
 	// If we couldn't get a Safari/WebKit-friendly MP4 (H.264 + AAC), optionally transcode.
 	if needsSafariTranscode(*format) {
@@ -192,12 +207,56 @@ func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir
 			previewPath := filepath.Join(destDir, sanitizeFilename(video.Title)+"-preview.mp4")
 			if err := transcodeToMP4(ctx, ffmpegPath, destPath, previewPath); err == nil {
 				_ = os.Remove(destPath)
-				return previewPath, nil
+				result.FilePath = previewPath
+				return result, nil
 			}
 		}
 	}
 
-	return destPath, nil
+	return result, nil
+}
+
+// probeResolution uses ffprobe (or ffmpeg) to get the resolution of a downloaded file
+func probeResolution(ffmpegPath string, filePath string) (int, int) {
+	// ffprobe lives next to ffmpeg
+	dir := filepath.Dir(ffmpegPath)
+	ffprobePath := filepath.Join(dir, "ffprobe")
+	if _, err := os.Stat(ffprobePath); err != nil {
+		// No ffprobe available; try ffmpeg -i as fallback
+		return probeWithFFmpeg(ffmpegPath, filePath)
+	}
+	cmd := exec.Command(ffprobePath, "-v", "error", "-select_streams", "v:0",
+		"-show_entries", "stream=width,height", "-of", "csv=p=0:s=x", filePath)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, 0
+	}
+	return parseWxH(strings.TrimSpace(string(out)))
+}
+
+func probeWithFFmpeg(ffmpegPath string, filePath string) (int, int) {
+	cmd := exec.Command(ffmpegPath, "-i", filePath, "-hide_banner")
+	// ffmpeg -i writes to stderr
+	out, _ := cmd.CombinedOutput()
+	// Look for "1920x1080" pattern in output
+	re := regexp.MustCompile(`(\d{2,5})x(\d{2,5})`)
+	matches := re.FindStringSubmatch(string(out))
+	if len(matches) == 3 {
+		return parseWxH(matches[1] + "x" + matches[2])
+	}
+	return 0, 0
+}
+
+func parseWxH(s string) (int, int) {
+	parts := strings.SplitN(s, "x", 2)
+	if len(parts) != 2 {
+		return 0, 0
+	}
+	w := 0
+	h := 0
+	fmt.Sscanf(parts[0], "%d", &w)
+	fmt.Sscanf(parts[1], "%d", &h)
+	return w, h
 }
 
 // downloadWithYtdlp uses yt-dlp for reliable high-quality downloads
@@ -485,18 +544,11 @@ func pickBestWithAudio(formats []youtube.Format) *youtube.Format {
 		return nil
 	}
 
-	// Prefer 720p if available, otherwise highest resolution; break ties by bitrate.
+	// Pick the highest resolution available; break ties by bitrate.
 	bestIdx := 0
 	for i := 1; i < len(formats); i++ {
 		f := formats[i]
 		best := formats[bestIdx]
-		if f.Height == 720 && best.Height != 720 {
-			bestIdx = i
-			continue
-		}
-		if best.Height == 720 && f.Height != 720 {
-			continue
-		}
 		if f.Height > best.Height {
 			bestIdx = i
 			continue

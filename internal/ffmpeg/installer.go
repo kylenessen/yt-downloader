@@ -290,6 +290,7 @@ func (i *Installer) GetYtdlpPath() string {
 			if preparedPath := i.prepareBundledBinary(bundledPath); preparedPath != "" {
 				return preparedPath
 			}
+			fmt.Printf("[DEBUG] Bundled yt-dlp found at %s but failed verification (Gatekeeper?)\n", bundledPath)
 		}
 	}
 
@@ -322,7 +323,66 @@ func (i *Installer) GetYtdlpPath() string {
 		}
 	}
 
+	// Check cached installation
+	cachedPath := i.cachedYtdlpPath()
+	if _, err := os.Stat(cachedPath); err == nil {
+		return cachedPath
+	}
+
 	return ""
+}
+
+func (i *Installer) cachedYtdlpPath() string {
+	name := "yt-dlp"
+	if runtime.GOOS == "windows" {
+		name = "yt-dlp.exe"
+	}
+	return filepath.Join(i.cacheDir, name)
+}
+
+// InstallYtdlp downloads yt-dlp to the cache directory if not already available.
+func (i *Installer) InstallYtdlp(ctx context.Context) error {
+	if i.GetYtdlpPath() != "" {
+		return nil // already available
+	}
+
+	var downloadURL string
+	switch runtime.GOOS {
+	case "darwin":
+		downloadURL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"
+	case "windows":
+		downloadURL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+	case "linux":
+		downloadURL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux"
+	default:
+		return fmt.Errorf("unsupported OS for yt-dlp: %s", runtime.GOOS)
+	}
+
+	fmt.Printf("[DEBUG] Downloading yt-dlp from %s\n", downloadURL)
+
+	destPath := i.cachedYtdlpPath()
+	if err := i.downloadFile(ctx, downloadURL, destPath, nil); err != nil {
+		return fmt.Errorf("failed to download yt-dlp: %w", err)
+	}
+
+	if err := os.Chmod(destPath, 0755); err != nil {
+		return fmt.Errorf("failed to make yt-dlp executable: %w", err)
+	}
+
+	// Remove quarantine on macOS
+	if runtime.GOOS == "darwin" {
+		_ = exec.Command("xattr", "-d", "com.apple.quarantine", destPath).Run()
+	}
+
+	// Verify it works
+	cmd := exec.CommandContext(ctx, destPath, "--version")
+	if err := cmd.Run(); err != nil {
+		_ = os.Remove(destPath)
+		return fmt.Errorf("downloaded yt-dlp failed verification: %w", err)
+	}
+
+	fmt.Printf("[DEBUG] yt-dlp installed to cache: %s\n", destPath)
+	return nil
 }
 
 // prepareBundledBinary ensures a bundled binary is executable by removing macOS

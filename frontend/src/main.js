@@ -27,6 +27,12 @@ document.querySelector('#app').innerHTML = `
         </div>
     </div>
 
+    <!-- Quality Warning Banner -->
+    <div class="quality-warning-banner" id="qualityWarningBanner">
+        <p id="qualityWarningText"></p>
+        <button class="btn btn-secondary btn-sm" id="dismissQualityWarning">Dismiss</button>
+    </div>
+
     <!-- Landing -->
     <div class="landing" id="landing">
         <div class="landing-card">
@@ -221,6 +227,9 @@ const exportProgressFill = document.getElementById('exportProgressFill');
 const exportProgressText = document.getElementById('exportProgressText');
 
 const statusMessage = document.getElementById('statusMessage');
+const qualityWarningBanner = document.getElementById('qualityWarningBanner');
+const qualityWarningText = document.getElementById('qualityWarningText');
+const dismissQualityWarning = document.getElementById('dismissQualityWarning');
 
 function getEffectiveTheme() {
     if (document.documentElement.dataset.theme === 'dark') return 'dark';
@@ -719,6 +728,24 @@ EventsOn('ffmpeg:progress', (data) => {
     const percent = Math.round(data.progress * 100);
     ffmpegProgressFill.style.width = `${percent}%`;
     ffmpegProgressText.textContent = data.status;
+});
+
+EventsOn('download:status', (status) => {
+    downloadProgressText.textContent = status;
+    landingProgressText.textContent = status;
+});
+
+EventsOn('download:quality-warning', (data) => {
+    const height = data.height || 0;
+    const label = height > 0 ? `${height}p` : 'unknown resolution';
+    qualityWarningText.textContent =
+        `Source video was downloaded at ${label} (progressive fallback). ` +
+        `High-quality download tools were unavailable. Export quality options are limited to this source resolution.`;
+    qualityWarningBanner.classList.add('visible');
+});
+
+dismissQualityWarning.addEventListener('click', () => {
+    qualityWarningBanner.classList.remove('visible');
 });
 
 // Initialize

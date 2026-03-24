@@ -751,6 +751,27 @@ video {
     color: var(--warning);
 }
 
+/* Quality Warning Banner */
+.quality-warning-banner {
+    display: none;
+    background: rgba(251, 191, 36, 0.1);
+    border: 1px solid var(--warning);
+    border-radius: var(--border-radius);
+    padding: 16px;
+    margin: 0 16px 16px;
+    text-align: center;
+}
+
+.quality-warning-banner.visible {
+    display: block;
+}
+
+.quality-warning-banner p {
+    margin-bottom: 12px;
+    color: var(--warning);
+    font-size: 13px;
+}
+
 /* FFmpeg Install Banner */
 .ffmpeg-banner {
     display: none;

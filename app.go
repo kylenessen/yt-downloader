@@ -131,18 +131,39 @@ func (a *App) LoadVideo(url string) (*VideoInfo, error) {
 	ytdlpPath := ""
 	if a.ffmpegInstaller != nil {
 		ytdlpPath = a.ffmpegInstaller.GetYtdlpPath()
+		// Auto-download yt-dlp if not available (bundled version may fail due to Gatekeeper)
+		if ytdlpPath == "" {
+			runtime.LogInfo(a.ctx, "yt-dlp not found, attempting auto-download...")
+			runtime.EventsEmit(a.ctx, "download:status", "Installing yt-dlp for high-quality downloads...")
+			if err := a.ffmpegInstaller.InstallYtdlp(a.ctx); err != nil {
+				runtime.LogWarning(a.ctx, fmt.Sprintf("Failed to auto-install yt-dlp: %v", err))
+			} else {
+				ytdlpPath = a.ffmpegInstaller.GetYtdlpPath()
+			}
+		}
 	}
 	runtime.LogInfo(a.ctx, fmt.Sprintf("Download paths: ffmpeg=%q yt-dlp=%q", ffmpegPath, ytdlpPath))
-	videoPath, err := a.downloader.DownloadForPreview(a.ctx, url, a.tempDir, ffmpegPath, ytdlpPath, func(progress float64) {
+	dlResult, err := a.downloader.DownloadForPreview(a.ctx, url, a.tempDir, ffmpegPath, ytdlpPath, func(progress float64) {
 		runtime.EventsEmit(a.ctx, "download:progress", progress)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to download video: %w", err)
 	}
 
+	runtime.LogInfo(a.ctx, fmt.Sprintf("Download result: method=%s resolution=%dx%d", dlResult.Method, dlResult.Width, dlResult.Height))
+
+	// Warn the user if we fell back to a low-quality progressive stream
+	if dlResult.Method == "progressive" {
+		runtime.EventsEmit(a.ctx, "download:quality-warning", map[string]interface{}{
+			"method": dlResult.Method,
+			"width":  dlResult.Width,
+			"height": dlResult.Height,
+		})
+	}
+
 	// Set up video server
 	a.currentVideoID = info.ID
-	a.videoServer.SetCurrentVideo(videoPath, info.ID)
+	a.videoServer.SetCurrentVideo(dlResult.FilePath, info.ID)
 
 	runtime.EventsEmit(a.ctx, "download:complete", nil)
 
