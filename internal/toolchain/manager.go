@@ -87,6 +87,9 @@ type Manager struct {
 	nightlyAPIURL    string
 	logf             func(format string, args ...any)
 	directPaths      *Paths
+	cachedPaths      Paths
+	cachedVersions   Versions
+	cacheValid       bool
 }
 
 // NewManager creates a toolchain manager. Empty configuration fields receive
@@ -163,6 +166,9 @@ func (m *Manager) RootDir() string {
 func (m *Manager) Ensure(ctx context.Context) (Paths, Versions, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.cacheValid {
+		return m.cachedPaths, m.cachedVersions, nil
+	}
 
 	if m.directPaths != nil {
 		if err := verifyExecutables(ctx, *m.directPaths); err != nil {
@@ -172,7 +178,10 @@ func (m *Manager) Ensure(ctx context.Context) (Paths, Versions, error) {
 		if err != nil {
 			return Paths{}, Versions{}, err
 		}
-		return *m.directPaths, Versions{Baseline: "development", YTDLP: version}, nil
+		m.cachedPaths = *m.directPaths
+		m.cachedVersions = Versions{Baseline: "development", YTDLP: version}
+		m.cacheValid = true
+		return m.cachedPaths, m.cachedVersions, nil
 	}
 
 	if err := os.MkdirAll(m.rootDir, 0755); err != nil {
@@ -207,6 +216,9 @@ func (m *Manager) Ensure(ctx context.Context) (Paths, Versions, error) {
 			return Paths{}, Versions{}, err
 		}
 	}
+	m.cachedPaths = paths
+	m.cachedVersions = versions
+	m.cacheValid = true
 	return paths, versions, nil
 }
 
@@ -315,7 +327,10 @@ func (m *Manager) CheckForYTDLPUpdate(ctx context.Context, force bool) (bool, Ve
 		return false, Versions{}, err
 	}
 	m.logf("Activated yt-dlp nightly %s", version)
-	return true, Versions{Baseline: manifest.Version, YTDLP: version}, nil
+	m.cachedPaths = Paths{YTDLP: finalPath, FFmpeg: currentPaths.FFmpeg, FFprobe: currentPaths.FFprobe, Deno: currentPaths.Deno}
+	m.cachedVersions = Versions{Baseline: manifest.Version, YTDLP: version}
+	m.cacheValid = true
+	return true, m.cachedVersions, nil
 }
 
 // RollbackYTDLP activates the previous verified yt-dlp version.
@@ -342,6 +357,7 @@ func (m *Manager) RollbackYTDLP(ctx context.Context) (bool, error) {
 	if err := m.saveState(state); err != nil {
 		return false, err
 	}
+	m.cacheValid = false
 	m.logf("Rolled yt-dlp back to %s", state.ActiveYTDLPVersion)
 	return true, nil
 }
