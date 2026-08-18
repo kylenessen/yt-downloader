@@ -13,6 +13,7 @@ build/darwin/Resources/yt-dlp
 build/windows/Resources/
 build/toolchains/
 build/download-cache/
+build/release-artifacts/
 
 # OS files
 .DS_Store
