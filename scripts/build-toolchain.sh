@@ -13,12 +13,26 @@ CACHE_DIR="${YT_DOWNLOADER_DOWNLOAD_CACHE:-$PROJECT_DIR/build/download-cache}"
 PLATFORM="$1"
 OUTPUT="$2"
 
-for command_name in awk curl gzip jq shasum unzip zip; do
+for command_name in awk curl gzip jq unzip zip; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
         echo "Required build command is missing: $command_name"
         exit 1
     fi
 done
+
+file_sha256() {
+    local path="$1"
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$path" | awk '{print $1}'
+        return
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$path" | awk '{print $1}'
+        return
+    fi
+    echo "Required build command is missing: shasum or sha256sum" >&2
+    exit 1
+}
 
 if [ "$(jq -r --arg platform "$PLATFORM" '.platforms[$platform] != null' "$MANIFEST")" != "true" ]; then
     echo "Unknown toolchain platform: $PLATFORM"
@@ -57,13 +71,13 @@ for logical_name in yt-dlp ffmpeg ffprobe deno; do
     destination="$WORK_DIR/$filename"
 
     cached_download="$CACHE_DIR/$expected"
-    if [ -f "$cached_download" ] && [ "$(shasum -a 256 "$cached_download" | awk '{print $1}')" = "$expected" ]; then
+    if [ -f "$cached_download" ] && [ "$(file_sha256 "$cached_download")" = "$expected" ]; then
         cp "$cached_download" "$download"
     else
         cache_temp="$WORK_DIR/$expected.cache"
         echo "Downloading $logical_name for $PLATFORM"
         curl --fail --location --retry 3 --silent --show-error --output "$cache_temp" "$url"
-        cache_sha="$(shasum -a 256 "$cache_temp" | awk '{print $1}')"
+        cache_sha="$(file_sha256 "$cache_temp")"
         if [ "$cache_sha" != "$expected" ]; then
             rm -f "$cache_temp"
             echo "Checksum mismatch for $logical_name. Expected $expected, got $cache_sha"
@@ -72,7 +86,7 @@ for logical_name in yt-dlp ffmpeg ffprobe deno; do
         mv "$cache_temp" "$cached_download"
         cp "$cached_download" "$download"
     fi
-    actual="$(shasum -a 256 "$download" | awk '{print $1}')"
+    actual="$(file_sha256 "$download")"
     if [ "$actual" != "$expected" ]; then
         echo "Checksum mismatch for $logical_name. Expected $expected, got $actual"
         exit 1
@@ -94,7 +108,7 @@ for logical_name in yt-dlp ffmpeg ffprobe deno; do
             ;;
     esac
     chmod 0755 "$destination"
-    installed_sha="$(shasum -a 256 "$destination" | awk '{print $1}')"
+    installed_sha="$(file_sha256 "$destination")"
     ARCHIVE_MANIFEST="$(jq \
         --arg logical "$logical_name" \
         --arg filename "$filename" \
