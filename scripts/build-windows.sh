@@ -1,84 +1,43 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_DIR/build/bin"
-RESOURCES_DIR="$PROJECT_DIR/build/windows/Resources"
-FFMPEG_SOURCE="$RESOURCES_DIR/ffmpeg.exe"
-YTDLP_SOURCE="$RESOURCES_DIR/yt-dlp.exe"
-
-echo "🔨 Building YT Downloader for Windows..."
-
-# Check if FFmpeg binary exists in build resources
-if [ ! -f "$FFMPEG_SOURCE" ]; then
-    echo "⬇️  FFmpeg for Windows not found. Downloading..."
-    mkdir -p "$RESOURCES_DIR"
-
-    # Download FFmpeg essentials build for Windows
-    curl -L -o /tmp/ffmpeg-win.zip "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
-
-    # Extract and find ffmpeg.exe
-    unzip -o /tmp/ffmpeg-win.zip -d /tmp/ffmpeg-win/
-
-    # Find and copy ffmpeg.exe (it's in a versioned subfolder)
-    FFMPEG_EXE=$(find /tmp/ffmpeg-win -name "ffmpeg.exe" | head -1)
-    if [ -n "$FFMPEG_EXE" ]; then
-        cp "$FFMPEG_EXE" "$FFMPEG_SOURCE"
-        echo "✅ FFmpeg for Windows downloaded"
-    else
-        echo "❌ Failed to find ffmpeg.exe in download"
-        exit 1
-    fi
-
-    # Cleanup
-    rm -rf /tmp/ffmpeg-win /tmp/ffmpeg-win.zip
-fi
-
-# Check if yt-dlp binary exists in build resources
-if [ ! -f "$YTDLP_SOURCE" ]; then
-    echo "⬇️  yt-dlp for Windows not found. Downloading..."
-    mkdir -p "$RESOURCES_DIR"
-    curl -L -o "$YTDLP_SOURCE" "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
-    echo "✅ yt-dlp for Windows downloaded"
-fi
-
-# Build the Wails app for Windows
-cd "$PROJECT_DIR"
-wails build -platform "windows/amd64"
-
-# Create distribution folder with exe and ffmpeg
+TOOLCHAIN_DIR="$PROJECT_DIR/build/toolchains"
+TOOLCHAIN_ARCHIVE="$TOOLCHAIN_DIR/toolchain-windows-amd64.zip"
 DIST_DIR="$BUILD_DIR/YT-Downloader-Windows"
-rm -rf "$DIST_DIR" 2>/dev/null || true
+OUTPUT_ZIP="$BUILD_DIR/YT-Downloader-Windows.zip"
+
+echo "Building self-contained YT Downloader package for Windows"
+mkdir -p "$BUILD_DIR"
+
+cd "$PROJECT_DIR"
+wails build -clean -platform "windows/amd64"
+
+mkdir -p "$TOOLCHAIN_DIR"
+"$SCRIPT_DIR/build-toolchain.sh" windows-amd64 "$TOOLCHAIN_ARCHIVE"
+
+rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
 
-echo "📦 Creating Windows distribution..."
-
-# Wails creates yt-downloader.exe when building for single platform
 if [ -f "$BUILD_DIR/yt-downloader.exe" ]; then
     mv "$BUILD_DIR/yt-downloader.exe" "$DIST_DIR/YT Downloader.exe"
 elif [ -f "$BUILD_DIR/yt-downloader-amd64.exe" ]; then
     mv "$BUILD_DIR/yt-downloader-amd64.exe" "$DIST_DIR/YT Downloader.exe"
 else
-    echo "❌ Could not find Windows exe"
+    echo "Expected Wails Windows executable is missing"
     exit 1
 fi
 
-cp "$FFMPEG_SOURCE" "$DIST_DIR/ffmpeg.exe"
-cp "$YTDLP_SOURCE" "$DIST_DIR/yt-dlp.exe"
+cp "$TOOLCHAIN_ARCHIVE" "$DIST_DIR/toolchain.zip"
+cp "$PROJECT_DIR/THIRD_PARTY_NOTICES.md" "$DIST_DIR/THIRD_PARTY_NOTICES.md"
 
-# Create zip
-echo "📦 Creating Windows zip..."
-cd "$BUILD_DIR"
-rm -f "YT-Downloader-Windows.zip" 2>/dev/null || true
-zip -r "YT-Downloader-Windows.zip" "YT-Downloader-Windows"
-rm -rf "YT-Downloader-Windows"
-cd "$PROJECT_DIR"
-
-# Verify
-echo ""
-echo "✅ Windows build complete!"
-echo ""
-echo "Built package:"
-ls -lh "$BUILD_DIR/YT-Downloader-Windows.zip" 2>/dev/null || echo "  No zip file found"
-echo ""
+rm -f "$OUTPUT_ZIP"
+(
+    cd "$BUILD_DIR"
+    zip -qr "$OUTPUT_ZIP" "$(basename "$DIST_DIR")"
+)
+rm -rf "$DIST_DIR"
+echo "Created $OUTPUT_ZIP"
+ls -lh "$OUTPUT_ZIP"

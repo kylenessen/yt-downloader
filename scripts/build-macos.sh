@@ -1,112 +1,69 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_DIR/build/bin"
-RESOURCES_DIR="$PROJECT_DIR/build/darwin/Resources"
+TOOLCHAIN_DIR="$PROJECT_DIR/build/toolchains"
+TOOLCHAIN_ARM64="$TOOLCHAIN_DIR/toolchain-darwin-arm64.zip"
+TOOLCHAIN_AMD64="$TOOLCHAIN_DIR/toolchain-darwin-amd64.zip"
+SIGN_IDENTITY="${APPLE_SIGN_IDENTITY:--}"
+NOTARY_PROFILE="${APPLE_NOTARY_PROFILE:-}"
 
-# FFmpeg static builds from GitHub (architecture-specific)
-FFMPEG_ARM64_URL="https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-arm64.gz"
-FFMPEG_AMD64_URL="https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-x64.gz"
+echo "Building self-contained YT Downloader packages for macOS"
+mkdir -p "$BUILD_DIR"
 
-echo "🔨 Building YT Downloader for macOS (Intel + Apple Silicon)..."
-
-mkdir -p "$RESOURCES_DIR"
-
-# Download architecture-specific FFmpeg binaries
-if [ ! -f "$RESOURCES_DIR/ffmpeg-arm64" ]; then
-    echo "⬇️  FFmpeg (ARM64) not found. Downloading..."
-    curl -L -o /tmp/ffmpeg-arm64.gz "$FFMPEG_ARM64_URL"
-    gunzip -c /tmp/ffmpeg-arm64.gz > "$RESOURCES_DIR/ffmpeg-arm64"
-    chmod +x "$RESOURCES_DIR/ffmpeg-arm64"
-    rm /tmp/ffmpeg-arm64.gz
-    echo "✅ FFmpeg (ARM64) downloaded"
-fi
-
-if [ ! -f "$RESOURCES_DIR/ffmpeg-amd64" ]; then
-    echo "⬇️  FFmpeg (Intel) not found. Downloading..."
-    curl -L -o /tmp/ffmpeg-amd64.gz "$FFMPEG_AMD64_URL"
-    gunzip -c /tmp/ffmpeg-amd64.gz > "$RESOURCES_DIR/ffmpeg-amd64"
-    chmod +x "$RESOURCES_DIR/ffmpeg-amd64"
-    rm /tmp/ffmpeg-amd64.gz
-    echo "✅ FFmpeg (Intel) downloaded"
-fi
-
-# Check if yt-dlp binary exists (universal macOS binary)
-YTDLP_SOURCE="$RESOURCES_DIR/yt-dlp"
-if [ ! -f "$YTDLP_SOURCE" ]; then
-    echo "⬇️  yt-dlp not found. Downloading..."
-    curl -L -o "$YTDLP_SOURCE" "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"
-    chmod +x "$YTDLP_SOURCE"
-    echo "✅ yt-dlp downloaded"
-fi
-
-# Build the Wails app for both architectures
 cd "$PROJECT_DIR"
-wails build -platform "darwin/amd64,darwin/arm64"
+wails build -clean -platform "darwin/amd64,darwin/arm64"
 
-# Function to package and sign an app
+mkdir -p "$TOOLCHAIN_DIR"
+"$SCRIPT_DIR/build-toolchain.sh" darwin-arm64 "$TOOLCHAIN_ARM64"
+"$SCRIPT_DIR/build-toolchain.sh" darwin-amd64 "$TOOLCHAIN_AMD64"
+
 package_app() {
-    local ARCH=$1
-    local ZIP_NAME=$2
-    local SOURCE_APP="$BUILD_DIR/yt-downloader-${ARCH}.app"
-    local DEST_APP="$BUILD_DIR/YT Downloader.app"
+    local arch="$1"
+    local toolchain_archive="$2"
+    local zip_name="$3"
+    local source_app="$BUILD_DIR/yt-downloader-${arch}.app"
+    local destination_app="$BUILD_DIR/YT Downloader.app"
+    local destination_zip="$BUILD_DIR/$zip_name"
 
-    if [ -d "$SOURCE_APP" ]; then
-        echo "📦 Packaging ${ARCH} build..."
-
-        # Remove any existing destination
-        rm -rf "$DEST_APP" 2>/dev/null || true
-
-        # Rename the app
-        mv "$SOURCE_APP" "$DEST_APP"
-
-        # Bundle architecture-specific FFmpeg
-        local DEST_FFMPEG="$DEST_APP/Contents/Resources/ffmpeg"
-        cp "$RESOURCES_DIR/ffmpeg-${ARCH}" "$DEST_FFMPEG"
-        chmod +x "$DEST_FFMPEG"
-
-        # Bundle yt-dlp
-        local DEST_YTDLP="$DEST_APP/Contents/Resources/yt-dlp"
-        cp "$YTDLP_SOURCE" "$DEST_YTDLP"
-        chmod +x "$DEST_YTDLP"
-
-        echo "🔏 Code signing (ad-hoc)..."
-        # 1. Sign the nested binaries first
-        codesign --force --sign - --options runtime "$DEST_FFMPEG"
-        codesign --force --sign - --options runtime "$DEST_YTDLP"
-        
-        # 2. Sign the main app bundle
-        codesign --force --deep --sign - --options runtime "$DEST_APP"
-        
-        # Verify the signature locally
-        echo "🔍 Verifying signature..."
-        codesign --verify --deep --strict "$DEST_APP" || echo "⚠️ Warning: Signature verification failed"
-        
-        # Remove any quarantine attributes (for local testing)
-        xattr -cr "$DEST_APP"
-        
-        # Create zip
-        echo "📦 Creating ${ZIP_NAME}..."
-        cd "$BUILD_DIR"
-        rm -f "$ZIP_NAME" 2>/dev/null || true
-        zip -qr "$ZIP_NAME" "YT Downloader.app"
-        rm -rf "YT Downloader.app"
-        cd "$PROJECT_DIR"
-        
-        echo "✅ Created $ZIP_NAME"
+    if [ ! -d "$source_app" ]; then
+        echo "Expected Wails output is missing: $source_app"
+        exit 1
     fi
+
+    rm -rf "$destination_app"
+    mv "$source_app" "$destination_app"
+    cp "$toolchain_archive" "$destination_app/Contents/Resources/toolchain.zip"
+    cp "$PROJECT_DIR/THIRD_PARTY_NOTICES.md" "$destination_app/Contents/Resources/THIRD_PARTY_NOTICES.md"
+
+    xattr -cr "$destination_app"
+    echo "Signing $arch package with identity $SIGN_IDENTITY"
+    if [ "$SIGN_IDENTITY" = "-" ]; then
+        codesign --force --deep --sign - --options runtime "$destination_app"
+    else
+        codesign --force --deep --sign "$SIGN_IDENTITY" --options runtime --timestamp "$destination_app"
+    fi
+    codesign --verify --deep --strict --verbose=2 "$destination_app"
+
+    if [ -n "$NOTARY_PROFILE" ]; then
+        local submission_zip="$BUILD_DIR/.notary-${arch}.zip"
+        rm -f "$submission_zip"
+        ditto -c -k --keepParent "$destination_app" "$submission_zip"
+        xcrun notarytool submit "$submission_zip" --keychain-profile "$NOTARY_PROFILE" --wait
+        xcrun stapler staple "$destination_app"
+        xcrun stapler validate "$destination_app"
+        rm -f "$submission_zip"
+    fi
+
+    rm -f "$destination_zip"
+    ditto -c -k --keepParent "$destination_app" "$destination_zip"
+    rm -rf "$destination_app"
+    echo "Created $destination_zip"
 }
 
-# Package both architectures
-package_app "arm64" "YT-Downloader-macOS-Apple-Silicon.zip"
-package_app "amd64" "YT-Downloader-macOS-Intel.zip"
+package_app arm64 "$TOOLCHAIN_ARM64" "YT-Downloader-macOS-Apple-Silicon.zip"
+package_app amd64 "$TOOLCHAIN_AMD64" "YT-Downloader-macOS-Intel.zip"
 
-# Verify
-echo ""
-echo "✅ macOS builds complete!"
-echo ""
-echo "Built packages:"
-ls -lh "$BUILD_DIR/"*.zip 2>/dev/null || echo "  No zip files found"
-echo ""
+ls -lh "$BUILD_DIR/"YT-Downloader-macOS-*.zip

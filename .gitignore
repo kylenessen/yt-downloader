@@ -11,6 +11,8 @@ build/darwin/Resources/ffmpeg-arm64
 build/darwin/Resources/ffmpeg-amd64
 build/darwin/Resources/yt-dlp
 build/windows/Resources/
+build/toolchains/
+build/download-cache/
 
 # OS files
 .DS_Store

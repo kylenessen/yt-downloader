@@ -106,11 +106,14 @@ func NewManager(cfg Config) (*Manager, error) {
 
 	rootDir := cfg.RootDir
 	if rootDir == "" {
-		configDir, err := os.UserConfigDir()
-		if err != nil {
-			return nil, fmt.Errorf("locate application support directory: %w", err)
+		rootDir = os.Getenv("YT_DOWNLOADER_TOOLCHAIN_ROOT")
+		if rootDir == "" {
+			configDir, err := os.UserConfigDir()
+			if err != nil {
+				return nil, fmt.Errorf("locate application support directory: %w", err)
+			}
+			rootDir = filepath.Join(configDir, "YT Downloader", "tools")
 		}
-		rootDir = filepath.Join(configDir, "YT Downloader", "tools")
 	}
 
 	client := cfg.HTTPClient
@@ -242,12 +245,7 @@ func (m *Manager) CheckForYTDLPUpdate(ctx context.Context, force bool) (bool, Ve
 		return false, Versions{}, err
 	}
 	if !force && !state.LastUpdateCheck.IsZero() && m.now().Sub(state.LastUpdateCheck) < m.updateInterval {
-		manifest, manifestErr := m.loadInstalledManifest()
-		if manifestErr != nil {
-			return false, Versions{}, manifestErr
-		}
-		_, versions, pathsErr := m.pathsLocked(manifest)
-		return false, versions, pathsErr
+		return false, m.cachedVersions, nil
 	}
 
 	release, err := m.fetchNightlyRelease(ctx)
@@ -256,16 +254,11 @@ func (m *Manager) CheckForYTDLPUpdate(ctx context.Context, force bool) (bool, Ve
 		_ = m.saveState(state)
 		return false, Versions{}, err
 	}
-	if state.ActiveYTDLPVersion == release.TagName {
+	if state.ActiveYTDLPVersion == release.TagName || m.cachedVersions.YTDLP == release.TagName {
 		if err := m.saveState(state); err != nil {
 			return false, Versions{}, err
 		}
-		manifest, manifestErr := m.loadInstalledManifest()
-		if manifestErr != nil {
-			return false, Versions{}, manifestErr
-		}
-		_, versions, pathsErr := m.pathsLocked(manifest)
-		return false, versions, pathsErr
+		return false, m.cachedVersions, nil
 	}
 
 	assetName := nightlyAssetName(m.goos, m.goarch)
@@ -645,29 +638,33 @@ func verifyExecutables(ctx context.Context, paths Paths) error {
 	tools := []struct {
 		name string
 		path string
+		arg  string
 	}{
-		{"yt-dlp", paths.YTDLP},
-		{"ffmpeg", paths.FFmpeg},
-		{"ffprobe", paths.FFprobe},
-		{"deno", paths.Deno},
+		{"yt-dlp", paths.YTDLP, "--version"},
+		{"ffmpeg", paths.FFmpeg, "-version"},
+		{"ffprobe", paths.FFprobe, "-version"},
+		{"deno", paths.Deno, "--version"},
 	}
 	for _, tool := range tools {
 		if tool.path == "" || !filepath.IsAbs(tool.path) {
 			return fmt.Errorf("%s path is not absolute", tool.name)
 		}
-		if _, err := executableVersion(ctx, tool.path); err != nil {
+		if _, err := executableVersion(ctx, tool.path, tool.arg); err != nil {
 			return fmt.Errorf("%s: %w", tool.name, err)
 		}
 	}
 	return nil
 }
 
-func executableVersion(parent context.Context, path string) (string, error) {
+func executableVersion(parent context.Context, path string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, 20*time.Second)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, path, "--version").CombinedOutput()
+	if len(args) == 0 {
+		args = []string{"--version"}
+	}
+	output, err := exec.CommandContext(ctx, path, args...).CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("run %s --version: %w: %s", filepath.Base(path), err, strings.TrimSpace(string(output)))
+		return "", fmt.Errorf("run %s %s: %w: %s", filepath.Base(path), strings.Join(args, " "), err, strings.TrimSpace(string(output)))
 	}
 	line := strings.TrimSpace(string(output))
 	if idx := strings.IndexByte(line, '\n'); idx >= 0 {

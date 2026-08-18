@@ -153,6 +153,71 @@ func TestNightlyUpdateAndRollback(t *testing.T) {
 	}
 }
 
+func TestNightlyUpdateSkipsMatchingBaseline(t *testing.T) {
+	archive := makeTestArchive(t, "baseline-1", map[string]string{
+		"yt-dlp":  "#!/bin/sh\necho 2099.01.02\n",
+		"ffmpeg":  "#!/bin/sh\necho baseline-ffmpeg\n",
+		"ffprobe": "#!/bin/sh\necho baseline-ffprobe\n",
+		"deno":    "#!/bin/sh\necho baseline-deno\n",
+	})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/release" {
+			t.Fatalf("unexpected asset request for matching baseline: %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(githubRelease{TagName: "2099.01.02"})
+	}))
+	defer server.Close()
+	m, err := NewManager(Config{
+		RootDir:          filepath.Join(t.TempDir(), "tools"),
+		BootstrapArchive: archive,
+		GOOS:             runtime.GOOS,
+		GOARCH:           runtime.GOARCH,
+		HTTPClient:       server.Client(),
+		NightlyAPIURL:    server.URL + "/release",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.Ensure(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	updated, versions, err := m.CheckForYTDLPUpdate(context.Background(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated || versions.YTDLP != "2099.01.02" {
+		t.Fatalf("matching baseline should not update: updated=%v versions=%+v", updated, versions)
+	}
+}
+
+func TestPackagedToolchain(t *testing.T) {
+	archive := os.Getenv("YT_DOWNLOADER_TEST_TOOLCHAIN_ARCHIVE")
+	if archive == "" {
+		t.Skip("YT_DOWNLOADER_TEST_TOOLCHAIN_ARCHIVE is not set")
+	}
+	m, err := NewManager(Config{
+		RootDir:          filepath.Join(t.TempDir(), "tools"),
+		BootstrapArchive: archive,
+		GOOS:             runtime.GOOS,
+		GOARCH:           runtime.GOARCH,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths, versions, err := m.Ensure(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if versions.Baseline == "" || versions.YTDLP == "" {
+		t.Fatalf("tool versions are incomplete: %+v", versions)
+	}
+	for _, path := range []string{paths.YTDLP, paths.FFmpeg, paths.FFprobe, paths.Deno} {
+		if info, err := os.Stat(path); err != nil || info.Size() == 0 {
+			t.Fatalf("invalid packaged tool %s: %v", path, err)
+		}
+	}
+}
+
 func makeTestArchive(t *testing.T, version string, tools map[string]string) string {
 	t.Helper()
 	archivePath := filepath.Join(t.TempDir(), "toolchain.zip")
