@@ -91,7 +91,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Invalid directory", http.StatusInternalServerError)
 			return
 		}
-		if !strings.HasPrefix(absPath, absAllowed) {
+		relative, err := filepath.Rel(absAllowed, absPath)
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
 			http.Error(w, "Access denied", http.StatusForbidden)
 			return
 		}
