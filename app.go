@@ -56,7 +56,19 @@ func (a *App) startup(ctx context.Context) {
 		a.logger.Printf("Application starting")
 	}
 
-	manager, err := toolchain.NewManager(toolchain.Config{Logf: a.logf})
+	toolchainConfig := toolchain.Config{Logf: a.logf}
+	environment := runtime.Environment(ctx)
+	if environment.BuildType == "dev" && os.Getenv("YT_DOWNLOADER_TOOLCHAIN_ARCHIVE") == "" {
+		archive, findErr := toolchain.FindDevelopmentArchive(environment.Platform, environment.Arch)
+		if findErr != nil {
+			a.logf("Development toolchain discovery failed error=%v", findErr)
+		} else {
+			toolchainConfig.BootstrapArchive = archive
+			a.logf("Development toolchain archive=%s", archive)
+		}
+	}
+
+	manager, err := toolchain.NewManager(toolchainConfig)
 	if err != nil {
 		a.logf("Toolchain manager initialization failed error=%v", err)
 		runtime.LogError(ctx, fmt.Sprintf("Failed to initialize toolchain: %v", err))

@@ -35,15 +35,14 @@ Recent diagnostics can be copied from the app if a download fails. Logs contain 
 
 ## Development
 
-Install Go 1.23, Node.js, and Wails 2.11. The app does not use tools from `PATH` in production. For local development, set all four explicit overrides before running `wails dev`.
+Install Go 1.23, Node.js, and Wails 2.11. The app does not use tools from `PATH` in production. Build the pinned development toolchain once, then run Wails. Subsequent toolchain builds use the local checksum-addressed download cache.
 
 ```bash
-export YT_DOWNLOADER_YTDLP=/absolute/path/to/yt-dlp
-export YT_DOWNLOADER_FFMPEG=/absolute/path/to/ffmpeg
-export YT_DOWNLOADER_FFPROBE=/absolute/path/to/ffprobe
-export YT_DOWNLOADER_DENO=/absolute/path/to/deno
+scripts/build-toolchain.sh darwin-arm64 build/toolchains/toolchain-darwin-arm64.zip
 wails dev
 ```
+
+Use `darwin-amd64` on an Intel Mac. Wails development builds discover this archive automatically. Explicit tool overrides remain available for toolchain development through `YT_DOWNLOADER_YTDLP`, `YT_DOWNLOADER_FFMPEG`, `YT_DOWNLOADER_FFPROBE`, and `YT_DOWNLOADER_DENO`. All four are required when overrides are used.
 
 Run the checks with the following commands.
 
