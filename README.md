@@ -12,11 +12,13 @@ YT Downloader is a self-contained desktop app for downloading and trimming YouTu
 | macOS on Intel | [Download for Intel Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/YT-Downloader-macOS-Intel.zip) |
 | Windows 64-bit | [Download for Windows](https://github.com/kylenessen/yt-downloader/releases/latest/download/YT-Downloader-Windows.zip) |
 
-On macOS, unzip the download and drag `YT Downloader.app` into Applications. On Windows, unzip the download and run `YT Downloader.exe` from the extracted folder.
+On macOS, unzip the download and drag `YT Downloader.app` into Applications. The current release is ad hoc signed. On first launch, Control-click the app, select Open, then confirm Open. If macOS still blocks it, open System Settings, select Privacy & Security, and choose Open Anyway. This is a one-time approval for that release.
+
+On Windows, unzip the download and run `YT Downloader.exe` from the extracted folder.
 
 No Homebrew, Python, FFmpeg, yt-dlp, Deno, or command line setup is required. The release contains everything the app needs. On first launch it verifies and installs its private copy of those tools into the user application support directory.
 
-The macOS release workflow signs and notarizes the app with Apple. A public release should not be published from an ad hoc build.
+The macOS release workflow uses Apple signing and notarization when credentials are configured. Otherwise it produces an ad hoc signed package that uses the one-time approval above.
 
 ## How it stays reliable
 

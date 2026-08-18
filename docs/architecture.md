@@ -32,9 +32,9 @@ Set `APPLE_SIGN_IDENTITY` to a Developer ID Application identity and `APPLE_NOTA
 
 ## Automated releases
 
-The release workflow runs only for version tags. It builds each operating system package on its native GitHub-hosted runner. The macOS job refuses to proceed without the Apple signing and notarization secrets. This prevents an unsigned package from being published accidentally.
+The release workflow runs only for version tags. It builds each operating system package on its native GitHub-hosted runner. When Apple credentials are configured, the macOS job signs and notarizes the packages. Without credentials, it creates ad hoc signed packages that require one-time approval through macOS Open or Privacy & Security.
 
-Configure these repository secrets before creating a release tag.
+These repository secrets are optional. Configure the complete set to enable Apple signing and notarization.
 
 | Secret | Purpose |
 | --- | --- |
@@ -46,4 +46,4 @@ Configure these repository secrets before creating a release tag.
 | `APPLE_APP_PASSWORD` | App-specific password for that account |
 | `APPLE_TEAM_ID` | Apple Developer team identifier |
 
-Pushing a tag such as `v1.2.0` builds, signs, notarizes, verifies, and publishes the three download archives. Normal pushes and pull requests run source tests and execute the packaged Mac and Windows toolchains on clean runners.
+Pushing a tag such as `v1.2.0` builds, verifies, and publishes the three download archives. It also signs and notarizes the Mac archives when Apple credentials are available. Normal pushes and pull requests run source tests and execute the packaged Mac and Windows toolchains on clean runners.

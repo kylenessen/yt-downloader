@@ -10,8 +10,10 @@ permissions:
 
 jobs:
   macos:
-    name: Build signed macOS packages
+    name: Build macOS packages
     runs-on: macos-14
+    env:
+      APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v7
@@ -32,12 +34,14 @@ jobs:
           go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Import Apple signing identity
+        if: env.APPLE_SIGN_IDENTITY != ''
         env:
           APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
         run: scripts/import-apple-certificate.sh
       - name: Configure Apple notarization
+        if: env.APPLE_SIGN_IDENTITY != ''
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
@@ -48,9 +52,12 @@ jobs:
           --password "$APPLE_APP_PASSWORD"
           --team-id "$APPLE_TEAM_ID"
       - name: Build, sign, and notarize
+        if: env.APPLE_SIGN_IDENTITY != ''
         env:
-          APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
           APPLE_NOTARY_PROFILE: yt-downloader-notary
+        run: scripts/build-macos.sh
+      - name: Build ad hoc signed packages
+        if: env.APPLE_SIGN_IDENTITY == ''
         run: scripts/build-macos.sh
       - uses: actions/upload-artifact@v7
         with:
