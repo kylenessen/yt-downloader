@@ -198,14 +198,6 @@ func (a *App) LoadVideo(url string) (*VideoInfo, error) {
 	}, nil
 }
 
-// GetVideoInfo gets video metadata without downloading
-func (a *App) GetVideoInfo(url string) (*youtube.VideoInfo, error) {
-	if a.downloader == nil {
-		return nil, fmt.Errorf("self-contained toolchain is not available")
-	}
-	return a.downloader.GetVideoInfo(a.ctx, url)
-}
-
 // SelectOutputDirectory opens a native directory picker
 func (a *App) SelectOutputDirectory() (string, error) {
 	dir, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
@@ -332,27 +324,13 @@ func (a *App) ExportClip(opts ExportOptions) error {
 	return nil
 }
 
-// CheckFFmpeg checks if FFmpeg is installed
-func (a *App) CheckFFmpeg() bool {
+// CheckToolchain verifies the included app-owned tools.
+func (a *App) CheckToolchain() bool {
 	if a.toolchain == nil {
 		return false
 	}
 	_, _, err := a.toolchain.Ensure(a.ctx)
 	return err == nil
-}
-
-// InstallFFmpeg downloads and installs FFmpeg
-func (a *App) InstallFFmpeg() error {
-	if a.toolchain == nil {
-		return fmt.Errorf("self-contained toolchain is not available")
-	}
-	runtime.EventsEmit(a.ctx, "ffmpeg:progress", map[string]interface{}{"progress": 0.1, "status": "Verifying included tools..."})
-	_, _, err := a.toolchain.Ensure(a.ctx)
-	if err != nil {
-		return err
-	}
-	runtime.EventsEmit(a.ctx, "ffmpeg:progress", map[string]interface{}{"progress": 1.0, "status": "Included tools are ready"})
-	return nil
 }
 
 // CancelLoad cancels the active metadata or preview download.
@@ -377,8 +355,7 @@ func (a *App) GetDiagnostics() (string, error) {
 	return fmt.Sprintf("YT Downloader diagnostics\nLog file: %s\n\n%s", a.logger.Path(), snapshot), nil
 }
 
-// GetVideoServer returns the video server for use as HTTP handler
-func (a *App) GetVideoServer() *video.Server {
+func (a *App) videoHandler() *video.Server {
 	return a.videoServer
 }
 
