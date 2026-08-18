@@ -29,3 +29,21 @@ FFmpeg, ffprobe, and Deno change less frequently. Their baseline versions are pi
 `scripts/build-toolchain.sh` creates a platform archive from pinned URLs and SHA256 values. macOS packaging copies only the archive into the app bundle. It does not copy or re-sign nested PyInstaller executables. The outer app is then signed and optionally notarized.
 
 Set `APPLE_SIGN_IDENTITY` to a Developer ID Application identity and `APPLE_NOTARY_PROFILE` to a `notarytool` keychain profile for a distributable macOS release. Without those values the script creates an ad hoc signed development package.
+
+## Automated releases
+
+The release workflow runs only for version tags. It builds each operating system package on its native GitHub-hosted runner. The macOS job refuses to proceed without the Apple signing and notarization secrets. This prevents an unsigned package from being published accidentally.
+
+Configure these repository secrets before creating a release tag.
+
+| Secret | Purpose |
+| --- | --- |
+| `APPLE_CERTIFICATE_P12` | Base64-encoded Developer ID Application certificate and private key |
+| `APPLE_CERTIFICATE_PASSWORD` | Password used when the PKCS12 file was exported |
+| `APPLE_KEYCHAIN_PASSWORD` | Ephemeral CI keychain password |
+| `APPLE_SIGN_IDENTITY` | Full Developer ID Application identity name |
+| `APPLE_ID` | Apple account used by the notary service |
+| `APPLE_APP_PASSWORD` | App-specific password for that account |
+| `APPLE_TEAM_ID` | Apple Developer team identifier |
+
+Pushing a tag such as `v1.2.0` builds, signs, notarizes, verifies, and publishes the three download archives. Normal pushes and pull requests run source tests and execute the packaged Mac and Windows toolchains on clean runners.
