@@ -1,21 +1,9 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "🚀 Building YT Downloader for all platforms..."
-echo ""
-
-# Build macOS
-echo "=========================================="
+echo "Building YT Downloader for all platforms"
 "$SCRIPT_DIR/build-macos.sh"
-echo ""
-
-# Build Windows
-echo "=========================================="
 "$SCRIPT_DIR/build-windows.sh"
-echo ""
-
-echo "=========================================="
-echo "🎉 All builds complete!"
-echo "=========================================="
+echo "All packages created"

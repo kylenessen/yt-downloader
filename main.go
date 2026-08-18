@@ -17,14 +17,14 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:    "YT Downloader",
-		Width:    1024,
-		Height:   768,
+		Title:     "YT Downloader",
+		Width:     1024,
+		Height:    768,
 		MinWidth:  980,
 		MinHeight: 700,
 		AssetServer: &assetserver.Options{
 			Assets:  assets,
-			Handler: app.GetVideoServer(),
+			Handler: app.videoHandler(),
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,

@@ -2,58 +2,57 @@
 
 ![YT Downloader screenshot](docs/images/screenshot.png)
 
-## Background
+YT Downloader is a self-contained desktop app for downloading and trimming YouTube videos into PowerPoint-friendly MP4 clips. It was built for preparing offline classes where internet access is unavailable.
 
-I teach a class at California Men's Colony, where I have no internet access. I needed a way to make my lectures entirely offline, and I like to use videos wherever I can. I had pieced together a number of scripts and hacky solutions to make it work, but after speaking with colleagues who wanted similar functionality, I set out to build this cross-platform, self-contained app. It's designed to make downloading YouTube clips simple. You can keep the audio for narration, but I find it especially useful as a replacement for GIFs—no audio, just a video or animation I can lecture over. The trimming tools are particularly helpful for extracting just the section you want for your slides.
-
-Everything exports to MP4, which plays nicely with PowerPoint. You can set videos to play on click or automatically with looping, replicating GIF behavior but at higher quality and smaller file size.
-
-I recommend 720p, as most projectors max out at this resolution. Of course, if you have the display for it, you can go higher.
-
-## 📥 Download
+## Download
 
 | Platform | Download |
-|----------|----------|
-| **macOS (Apple Silicon)** | [Download for Apple Silicon Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/YT-Downloader-macOS-Apple-Silicon.zip) |
-| **macOS (Intel)** | [Download for Intel Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/YT-Downloader-macOS-Intel.zip) |
-| **Windows** | [Download for Windows](https://github.com/kylenessen/yt-downloader/releases/latest/download/YT-Downloader-Windows.zip) |
+| --- | --- |
+| macOS on Apple Silicon | [Download for Apple Silicon Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/YT-Downloader-macOS-Apple-Silicon.zip) |
+| macOS on Intel | [Download for Intel Mac](https://github.com/kylenessen/yt-downloader/releases/latest/download/YT-Downloader-macOS-Intel.zip) |
+| Windows 64-bit | [Download for Windows](https://github.com/kylenessen/yt-downloader/releases/latest/download/YT-Downloader-Windows.zip) |
 
-> **Not sure which Mac you have?** Click  → About This Mac. If the chip says "Apple M1" or higher (M2, M3, etc.), use Apple Silicon. If it says "Intel", use Intel.
+On macOS, unzip the download and drag `YT Downloader.app` into Applications. The current release is ad hoc signed. On first launch, Control-click the app, select Open, then confirm Open. If macOS still blocks it, open System Settings, select Privacy & Security, and choose Open Anyway. This is a one-time approval for that release.
 
-### Installation
+On Windows, unzip the download and run `YT Downloader.exe` from the extracted folder.
 
-**macOS (recommended — one-line install):**
+No Homebrew, Python, FFmpeg, yt-dlp, Deno, or command line setup is required. The release contains everything the app needs. On first launch it verifies and installs its private copy of those tools into the user application support directory.
 
-Open Terminal and paste:
-```bash
-curl -sSL https://raw.githubusercontent.com/kylenessen/yt-downloader/main/scripts/install-mac.sh | bash
-```
-This automatically downloads the correct version for your Mac, installs it to Applications, and handles macOS security so the app opens without issues.
+The macOS release workflow uses Apple signing and notarization when credentials are configured. Otherwise it produces an ad hoc signed package that uses the one-time approval above.
 
-**macOS (manual):**
+## How it stays reliable
 
-1. Download and unzip
-2. Drag `YT Downloader.app` to your Applications folder
-3. Right-click (or Control-click) the app → select "Open" → click "Open" in the dialog
+All YouTube-specific behavior goes through yt-dlp. The app includes a pinned and checksum-verified baseline toolchain. It checks the official yt-dlp nightly channel at most once per day, verifies updates before activation, and retains the previous version for rollback.
 
-If you see a message that the app "cannot be opened because the developer cannot be verified":
+If a high-quality download fails because YouTube changed its extractor or challenge behavior, the app updates yt-dlp and retries once before using a lower-quality progressive stream. The interface reports the source and actual preview resolution, so a fallback is visible rather than silent.
 
-1. Open **System Settings** → **Privacy & Security**
-2. Scroll down to the Security section—you should see a message about "YT Downloader" being blocked
-3. Click **Open Anyway**
-4. Enter your password if prompted, then click "Open" in the final dialog
+Recent diagnostics can be copied from the app if a download fails. Logs contain tool versions and download attempts, but do not contain downloaded media.
 
-> **Why does this happen?** The app is not signed with an Apple Developer certificate. This is a one-time step; after allowing it once, the app will open normally.
-
-**Windows:**
-
-1. Download and unzip
-2. Keep `YT Downloader.exe` and `ffmpeg.exe` in the same folder
-3. Run `YT Downloader.exe`
-
-## System Requirements
+## System requirements
 
 | Platform | Requirements |
-|----------|-------------|
-| macOS | macOS 11+ (Big Sur or later) |
-| Windows | Windows 10+ (64-bit) |
+| --- | --- |
+| macOS | macOS 11 or later |
+| Windows | Windows 10 or later, 64-bit |
+
+## Development
+
+Install Go 1.23, Node.js, and Wails 2.11. The app does not use tools from `PATH` in production. Build the pinned development toolchain once, then run Wails. Subsequent toolchain builds use the local checksum-addressed download cache.
+
+```bash
+scripts/build-toolchain.sh darwin-arm64 build/toolchains/toolchain-darwin-arm64.zip
+wails dev
+```
+
+Use `darwin-amd64` on an Intel Mac. Wails development builds discover this archive automatically. Explicit tool overrides remain available for toolchain development through `YT_DOWNLOADER_YTDLP`, `YT_DOWNLOADER_FFMPEG`, `YT_DOWNLOADER_FFPROBE`, and `YT_DOWNLOADER_DENO`. All four are required when overrides are used.
+
+Run the checks with the following commands.
+
+```bash
+go test ./...
+go vet ./...
+npm --prefix frontend ci
+npm --prefix frontend run build
+```
+
+The release architecture and update behavior are documented in [docs/architecture.md](docs/architecture.md). Exact bundled versions and checksums live in [toolchain/manifest.json](toolchain/manifest.json).

@@ -33,6 +33,9 @@ export namespace main {
 	    videoUrl: string;
 	    sourceWidth: number;
 	    sourceHeight: number;
+	    previewWidth: number;
+	    previewHeight: number;
+	    downloadMethod: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new VideoInfo(source);
@@ -48,54 +51,9 @@ export namespace main {
 	        this.videoUrl = source["videoUrl"];
 	        this.sourceWidth = source["sourceWidth"];
 	        this.sourceHeight = source["sourceHeight"];
-	    }
-	}
-
-}
-
-export namespace video {
-	
-	export class Server {
-	
-	
-	    static createFrom(source: any = {}) {
-	        return new Server(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	
-	    }
-	}
-
-}
-
-export namespace youtube {
-	
-	export class VideoInfo {
-	    id: string;
-	    title: string;
-	    author: string;
-	    duration: number;
-	    thumbnail: string;
-	    description: string;
-	    sourceWidth: number;
-	    sourceHeight: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new VideoInfo(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.title = source["title"];
-	        this.author = source["author"];
-	        this.duration = source["duration"];
-	        this.thumbnail = source["thumbnail"];
-	        this.description = source["description"];
-	        this.sourceWidth = source["sourceWidth"];
-	        this.sourceHeight = source["sourceHeight"];
+	        this.previewWidth = source["previewWidth"];
+	        this.previewHeight = source["previewHeight"];
+	        this.downloadMethod = source["downloadMethod"];
 	    }
 	}
 

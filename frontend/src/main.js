@@ -1,6 +1,6 @@
 import './style.css';
-import { LoadVideo, SelectOutputDirectory, ExportClip, CheckFFmpeg, InstallFFmpeg } from '../wailsjs/go/main/App';
-import { EventsOn, WindowSetDarkTheme, WindowSetLightTheme, WindowSetSystemDefaultTheme } from '../wailsjs/runtime/runtime';
+import { CancelLoad, CheckToolchain, ExportClip, GetDiagnostics, LoadVideo, SelectOutputDirectory } from '../wailsjs/go/main/App';
+import { ClipboardSetText, EventsOn, WindowSetDarkTheme, WindowSetLightTheme, WindowSetSystemDefaultTheme } from '../wailsjs/runtime/runtime';
 
 // State
 let videoInfo = null;
@@ -8,23 +8,17 @@ let startTime = 0;
 let endTime = 0;
 let duration = 0;
 let outputDir = '';
-let ffmpegInstalled = false;
+let toolchainReady = false;
 let qualityPreset = 'medium';
 let maxResolution = '720p';
 let themePreference = 'system';
 
 // Initialize the app
 document.querySelector('#app').innerHTML = `
-    <!-- FFmpeg Install Banner -->
-    <div class="ffmpeg-banner" id="ffmpegBanner">
-        <p>FFmpeg is required for video processing but is not installed.</p>
-        <button class="btn" id="installFfmpeg">Install FFmpeg</button>
-        <div class="progress-container" id="ffmpegProgress">
-            <div class="progress-bar">
-                <div class="progress-fill" id="ffmpegProgressFill"></div>
-            </div>
-            <div class="progress-text" id="ffmpegProgressText">Installing...</div>
-        </div>
+    <!-- Included Toolchain Error Banner -->
+    <div class="ffmpeg-banner" id="toolchainBanner">
+        <p>The included download tools could not start. Reinstall the application, or copy diagnostics for help.</p>
+        <button class="btn" id="copyDiagnosticsBanner">Copy Diagnostics</button>
     </div>
 
     <!-- Quality Warning Banner -->
@@ -40,6 +34,7 @@ document.querySelector('#app').innerHTML = `
             <div class="url-section landing-url">
                 <input type="text" class="url-input" id="urlInputHero" placeholder="https://www.youtube.com/watch?v=..." />
                 <button class="btn" id="loadBtnHero">Load</button>
+                <button class="btn btn-secondary cancel-load" id="cancelLoadHero">Cancel</button>
             </div>
             <div class="progress-container landing-progress" id="landingProgress">
                 <div class="progress-bar">
@@ -56,6 +51,7 @@ document.querySelector('#app').innerHTML = `
             <div class="sidebar-header">
                 <div class="sidebar-title">Controls</div>
                 <div class="sidebar-actions">
+                    <button class="btn btn-secondary diagnostics-btn" id="copyDiagnostics" title="Copy diagnostics">Diagnostics</button>
                     <button class="icon-btn theme-toggle" id="themeToggle" title="Toggle theme" aria-label="Toggle theme"></button>
                     <button class="btn btn-secondary sidebar-toggle" id="sidebarToggle" title="Collapse sidebar">⟨</button>
                 </div>
@@ -66,6 +62,7 @@ document.querySelector('#app').innerHTML = `
                 <div class="url-section compact">
                     <input type="text" class="url-input" id="urlInput" placeholder="Paste YouTube URL..." />
                     <button class="btn" id="loadBtn">Load</button>
+                    <button class="btn btn-secondary cancel-load" id="cancelLoad">Cancel</button>
                 </div>
                 <div class="progress-container" id="downloadProgress">
                     <div class="progress-bar">
@@ -173,6 +170,7 @@ document.querySelector('#app').innerHTML = `
 const landing = document.getElementById('landing');
 const urlInputHero = document.getElementById('urlInputHero');
 const loadBtnHero = document.getElementById('loadBtnHero');
+const cancelLoadHero = document.getElementById('cancelLoadHero');
 const themeToggle = document.getElementById('themeToggle');
 const landingProgress = document.getElementById('landingProgress');
 const landingProgressFill = document.getElementById('landingProgressFill');
@@ -181,18 +179,17 @@ const landingHint = document.getElementById('landingHint');
 
 const urlInput = document.getElementById('urlInput');
 const loadBtn = document.getElementById('loadBtn');
+const cancelLoad = document.getElementById('cancelLoad');
 const downloadProgress = document.getElementById('downloadProgress');
 const downloadProgressFill = document.getElementById('downloadProgressFill');
 const downloadProgressText = document.getElementById('downloadProgressText');
 
-const ffmpegBanner = document.getElementById('ffmpegBanner');
-const installFfmpegBtn = document.getElementById('installFfmpeg');
-const ffmpegProgress = document.getElementById('ffmpegProgress');
-const ffmpegProgressFill = document.getElementById('ffmpegProgressFill');
-const ffmpegProgressText = document.getElementById('ffmpegProgressText');
+const toolchainBanner = document.getElementById('toolchainBanner');
+const copyDiagnosticsBanner = document.getElementById('copyDiagnosticsBanner');
 
 const layoutRoot = document.getElementById('layoutRoot');
 const sidebarToggle = document.getElementById('sidebarToggle');
+const copyDiagnosticsBtn = document.getElementById('copyDiagnostics');
 const thumbRow = document.getElementById('thumbRow');
 const thumbnailImg = document.getElementById('thumbnailImg');
 const sourceResolution = document.getElementById('sourceResolution');
@@ -411,18 +408,18 @@ function showStatus(message, type = 'success') {
     }, 5000);
 }
 
-// Check FFmpeg installation
-async function checkFfmpeg() {
+// Verify the included app-owned toolchain.
+async function checkToolchain() {
     try {
-        ffmpegInstalled = await CheckFFmpeg();
-        if (!ffmpegInstalled) {
-            ffmpegBanner.classList.add('visible');
+        toolchainReady = await CheckToolchain();
+        if (!toolchainReady) {
+            toolchainBanner.classList.add('visible');
         } else {
-            ffmpegBanner.classList.remove('visible');
+            toolchainBanner.classList.remove('visible');
         }
     } catch (err) {
-        console.error('Failed to check FFmpeg:', err);
-        ffmpegBanner.classList.add('visible');
+        console.error('Failed to check included tools:', err);
+        toolchainBanner.classList.add('visible');
     }
 }
 
@@ -435,6 +432,8 @@ async function loadVideoFromURL(url) {
     try {
         loadBtn.disabled = true;
         loadBtnHero.disabled = true;
+        cancelLoad.classList.add('visible');
+        cancelLoadHero.classList.add('visible');
 
         // Show progress on both landing and sidebar
         downloadProgress.classList.add('visible');
@@ -455,7 +454,11 @@ async function loadVideoFromURL(url) {
         videoAuthor.textContent = videoInfo.author;
 
         // Display source resolution
-        if (videoInfo.sourceHeight > 0) {
+        if (videoInfo.sourceHeight > 0 && videoInfo.previewHeight > 0) {
+            sourceResolution.textContent =
+                `Source: ${videoInfo.sourceWidth}×${videoInfo.sourceHeight} · ` +
+                `Preview: ${videoInfo.previewWidth}×${videoInfo.previewHeight}`;
+        } else if (videoInfo.sourceHeight > 0) {
             sourceResolution.textContent = `Source: ${videoInfo.sourceWidth}×${videoInfo.sourceHeight}`;
         } else {
             sourceResolution.textContent = '';
@@ -492,36 +495,41 @@ async function loadVideoFromURL(url) {
         qualityPresetSelect.value = qualityPreset;
         maxResolutionSelect.value = maxResolution;
     } catch (err) {
-        showStatus(`Failed to load video: ${err}`, 'error');
+        const message = String(err);
+        if (message.toLowerCase().includes('canceled') || message.toLowerCase().includes('cancelled')) {
+            showStatus('Video load cancelled.', 'warning');
+        } else {
+            showStatus(`Failed to load video: ${err}`, 'error');
+        }
     } finally {
         loadBtn.disabled = false;
         loadBtnHero.disabled = false;
+        cancelLoad.classList.remove('visible');
+        cancelLoadHero.classList.remove('visible');
         downloadProgress.classList.remove('visible');
         landingProgress.classList.remove('visible');
         landingHint.style.display = '';
     }
 }
 
-// Install FFmpeg
-installFfmpegBtn.addEventListener('click', async () => {
+async function copyDiagnostics() {
     try {
-        installFfmpegBtn.disabled = true;
-        ffmpegProgress.classList.add('visible');
-        await InstallFFmpeg();
-        ffmpegInstalled = true;
-        ffmpegBanner.classList.remove('visible');
-        showStatus('FFmpeg installed successfully!', 'success');
+        const diagnostics = await GetDiagnostics();
+        await ClipboardSetText(diagnostics);
+        showStatus('Diagnostics copied to the clipboard.', 'success');
     } catch (err) {
-        showStatus(`Failed to install FFmpeg: ${err}`, 'error');
-        installFfmpegBtn.disabled = false;
-    } finally {
-        ffmpegProgress.classList.remove('visible');
+        showStatus(`Failed to copy diagnostics: ${err}`, 'error');
     }
-});
+}
+
+copyDiagnosticsBtn.addEventListener('click', copyDiagnostics);
+copyDiagnosticsBanner.addEventListener('click', copyDiagnostics);
 
 // Load video
 loadBtn.addEventListener('click', async () => loadVideoFromURL(urlInput.value.trim()));
 loadBtnHero.addEventListener('click', async () => loadVideoFromURL(urlInputHero.value.trim()));
+cancelLoad.addEventListener('click', async () => CancelLoad());
+cancelLoadHero.addEventListener('click', async () => CancelLoad());
 
 urlInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -674,8 +682,8 @@ exportBtn.addEventListener('click', async () => {
         return;
     }
 
-    if (!ffmpegInstalled) {
-        showStatus('FFmpeg is not installed. Please install it first.', 'error');
+    if (!toolchainReady) {
+        showStatus('The included media tools are unavailable. Copy diagnostics for help.', 'error');
         return;
     }
 
@@ -724,12 +732,6 @@ EventsOn('export:progress', (progress) => {
     exportProgressText.textContent = `Exporting: ${percent}%`;
 });
 
-EventsOn('ffmpeg:progress', (data) => {
-    const percent = Math.round(data.progress * 100);
-    ffmpegProgressFill.style.width = `${percent}%`;
-    ffmpegProgressText.textContent = data.status;
-});
-
 EventsOn('download:status', (status) => {
     downloadProgressText.textContent = status;
     landingProgressText.textContent = status;
@@ -738,10 +740,18 @@ EventsOn('download:status', (status) => {
 EventsOn('download:quality-warning', (data) => {
     const height = data.height || 0;
     const label = height > 0 ? `${height}p` : 'unknown resolution';
-    qualityWarningText.textContent =
-        `Source video was downloaded at ${label} (progressive fallback). ` +
-        `High-quality download tools were unavailable. Export quality options are limited to this source resolution.`;
+    const reason = data.reason || 'The high-quality formats could not be downloaded.';
+    qualityWarningText.textContent = `${reason} Preview quality is ${label}. Export quality is limited to this resolution.`;
     qualityWarningBanner.classList.add('visible');
+});
+
+EventsOn('toolchain:error', () => {
+    toolchainReady = false;
+    toolchainBanner.classList.add('visible');
+});
+
+EventsOn('toolchain:updated', (version) => {
+    showStatus(`Downloader updated to ${version}.`, 'success');
 });
 
 dismissQualityWarning.addEventListener('click', () => {
@@ -749,6 +759,6 @@ dismissQualityWarning.addEventListener('click', () => {
 });
 
 // Initialize
-checkFfmpeg();
+checkToolchain();
 thumbRow.classList.remove('visible');
 showLanding();

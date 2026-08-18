@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify source
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: go test ./...
+      - run: go vet ./...
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  macos-toolchain:
+    name: Verify packaged Mac toolchain
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: actions/cache@v5
+        with:
+          path: build/download-cache
+          key: toolchain-macos-${{ hashFiles('toolchain/manifest.json') }}
+      - run: scripts/build-toolchain.sh darwin-arm64 build/toolchains/toolchain-darwin-arm64.zip
+      - run: go test ./internal/toolchain -run '^TestPackagedToolchain$'
+        env:
+          YT_DOWNLOADER_TEST_TOOLCHAIN_ARCHIVE: ${{ github.workspace }}/build/toolchains/toolchain-darwin-arm64.zip
+
+  windows-toolchain:
+    name: Verify packaged Windows toolchain
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: actions/cache@v5
+        with:
+          path: build/download-cache
+          key: toolchain-windows-${{ hashFiles('toolchain/manifest.json') }}
+      - run: choco install jq zip --no-progress -y
+      - run: scripts/build-toolchain.sh windows-amd64 build/toolchains/toolchain-windows-amd64.zip
+        shell: bash
+      - run: go test ./internal/toolchain -run '^TestPackagedToolchain$'
+        env:
+          YT_DOWNLOADER_TEST_TOOLCHAIN_ARCHIVE: ${{ github.workspace }}\build\toolchains\toolchain-windows-amd64.zip

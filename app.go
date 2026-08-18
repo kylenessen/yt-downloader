@@ -8,9 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
+	"yt-downloader/internal/diagnostics"
 	"yt-downloader/internal/ffmpeg"
+	"yt-downloader/internal/toolchain"
 	"yt-downloader/internal/video"
 	"yt-downloader/internal/youtube"
 
@@ -22,19 +25,21 @@ type App struct {
 	ctx             context.Context
 	downloader      *youtube.Downloader
 	videoServer     *video.Server
-	ffmpegInstaller *ffmpeg.Installer
+	toolchain       *toolchain.Manager
+	logger          *diagnostics.Logger
 	previewServer   *http.Server
 	previewListener net.Listener
 	previewBaseURL  string
 	previewErr      error
 	tempDir         string
-	currentVideoID  string
+	loadMu          sync.Mutex
+	loadCancel      context.CancelFunc
+	loadGeneration  uint64
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
-		downloader:  youtube.NewDownloader(),
 		videoServer: video.NewServer(),
 	}
 }
@@ -42,6 +47,35 @@ func NewApp() *App {
 // startup is called when the app starts
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+
+	logger, err := diagnostics.NewDefault()
+	if err != nil {
+		runtime.LogError(ctx, fmt.Sprintf("Failed to initialize diagnostic log: %v", err))
+	} else {
+		a.logger = logger
+		a.logger.Printf("Application starting")
+	}
+
+	toolchainConfig := toolchain.Config{Logf: a.logf}
+	environment := runtime.Environment(ctx)
+	if environment.BuildType == "dev" && os.Getenv("YT_DOWNLOADER_TOOLCHAIN_ARCHIVE") == "" {
+		archive, findErr := toolchain.FindDevelopmentArchive(environment.Platform, environment.Arch)
+		if findErr != nil {
+			a.logf("Development toolchain discovery failed error=%v", findErr)
+		} else {
+			toolchainConfig.BootstrapArchive = archive
+			a.logf("Development toolchain archive=%s", archive)
+		}
+	}
+
+	manager, err := toolchain.NewManager(toolchainConfig)
+	if err != nil {
+		a.logf("Toolchain manager initialization failed error=%v", err)
+		runtime.LogError(ctx, fmt.Sprintf("Failed to initialize toolchain: %v", err))
+	} else {
+		a.toolchain = manager
+		a.downloader = youtube.NewDownloader(manager, a.logf)
+	}
 
 	// Create temp directory for downloads
 	tempDir, err := os.MkdirTemp("", "yt-downloader-*")
@@ -67,17 +101,14 @@ func (a *App) startup(ctx context.Context) {
 		}()
 	}
 
-	// Initialize FFmpeg installer
-	installer, err := ffmpeg.NewInstaller()
-	if err != nil {
-		runtime.LogError(ctx, fmt.Sprintf("Failed to initialize FFmpeg installer: %v", err))
-	} else {
-		a.ffmpegInstaller = installer
+	if a.toolchain != nil {
+		go a.refreshToolchain(ctx)
 	}
 }
 
 // shutdown is called when the app is closing
 func (a *App) shutdown(ctx context.Context) {
+	a.CancelLoad()
 	if a.previewServer != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		_ = a.previewServer.Shutdown(shutdownCtx)
@@ -91,22 +122,32 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.tempDir != "" {
 		os.RemoveAll(a.tempDir)
 	}
+	if a.logger != nil {
+		a.logger.Printf("Application stopped")
+		_ = a.logger.Close()
+	}
 }
 
 // VideoInfo holds video metadata for the frontend
 type VideoInfo struct {
-	ID           string  `json:"id"`
-	Title        string  `json:"title"`
-	Author       string  `json:"author"`
-	Duration     float64 `json:"duration"`
-	Thumbnail    string  `json:"thumbnail"`
-	VideoURL     string  `json:"videoUrl"`
-	SourceWidth  int     `json:"sourceWidth"`
-	SourceHeight int     `json:"sourceHeight"`
+	ID             string  `json:"id"`
+	Title          string  `json:"title"`
+	Author         string  `json:"author"`
+	Duration       float64 `json:"duration"`
+	Thumbnail      string  `json:"thumbnail"`
+	VideoURL       string  `json:"videoUrl"`
+	SourceWidth    int     `json:"sourceWidth"`
+	SourceHeight   int     `json:"sourceHeight"`
+	PreviewWidth   int     `json:"previewWidth"`
+	PreviewHeight  int     `json:"previewHeight"`
+	DownloadMethod string  `json:"downloadMethod"`
 }
 
 // LoadVideo downloads a YouTube video and returns its info
 func (a *App) LoadVideo(url string) (*VideoInfo, error) {
+	if a.downloader == nil || a.toolchain == nil {
+		return nil, fmt.Errorf("self-contained toolchain is not available; reinstall the application")
+	}
 	if a.previewBaseURL == "" {
 		if a.previewErr != nil {
 			return nil, fmt.Errorf("preview server failed to start: %w", a.previewErr)
@@ -114,74 +155,59 @@ func (a *App) LoadVideo(url string) (*VideoInfo, error) {
 		return nil, fmt.Errorf("preview server not available")
 	}
 
-	// Get video info first
-	info, err := a.downloader.GetVideoInfo(a.ctx, url)
+	loadCtx, generation := a.beginLoad()
+	defer a.finishLoad(generation)
+
+	runtime.EventsEmit(a.ctx, "download:status", "Reading video information...")
+	info, err := a.downloader.GetVideoInfo(loadCtx, url)
 	if err != nil {
+		a.logf("Video metadata failed error=%v", err)
 		return nil, fmt.Errorf("failed to get video info: %w", err)
 	}
 
 	// Clear any previous video
 	a.videoServer.ClearVideo()
 
-	// Download video with progress updates
-	ffmpegPath := ""
-	if a.ffmpegInstaller != nil && a.ffmpegInstaller.IsInstalled() {
-		ffmpegPath = a.ffmpegInstaller.GetFFmpegPath()
-	}
-	ytdlpPath := ""
-	if a.ffmpegInstaller != nil {
-		ytdlpPath = a.ffmpegInstaller.GetYtdlpPath()
-		// Auto-download yt-dlp if not available (bundled version may fail due to Gatekeeper)
-		if ytdlpPath == "" {
-			runtime.LogInfo(a.ctx, "yt-dlp not found, attempting auto-download...")
-			runtime.EventsEmit(a.ctx, "download:status", "Installing yt-dlp for high-quality downloads...")
-			if err := a.ffmpegInstaller.InstallYtdlp(a.ctx); err != nil {
-				runtime.LogWarning(a.ctx, fmt.Sprintf("Failed to auto-install yt-dlp: %v", err))
-			} else {
-				ytdlpPath = a.ffmpegInstaller.GetYtdlpPath()
-			}
-		}
-	}
-	runtime.LogInfo(a.ctx, fmt.Sprintf("Download paths: ffmpeg=%q yt-dlp=%q", ffmpegPath, ytdlpPath))
-	dlResult, err := a.downloader.DownloadForPreview(a.ctx, url, a.tempDir, ffmpegPath, ytdlpPath, func(progress float64) {
+	runtime.EventsEmit(a.ctx, "download:status", "Downloading the best available quality...")
+	dlResult, err := a.downloader.DownloadForPreview(loadCtx, url, info, a.tempDir, func(progress float64) {
 		runtime.EventsEmit(a.ctx, "download:progress", progress)
 	})
 	if err != nil {
+		a.logf("Preview download failed id=%s error=%v", info.ID, err)
 		return nil, fmt.Errorf("failed to download video: %w", err)
 	}
 
-	runtime.LogInfo(a.ctx, fmt.Sprintf("Download result: method=%s resolution=%dx%d", dlResult.Method, dlResult.Width, dlResult.Height))
+	a.logf("Download result id=%s method=%s resolution=%dx%d", info.ID, dlResult.Method, dlResult.Width, dlResult.Height)
 
 	// Warn the user if we fell back to a low-quality progressive stream
 	if dlResult.Method == "progressive" {
+		reason := "High-quality formats were rejected. The app updated yt-dlp and then used the best compatible progressive stream."
 		runtime.EventsEmit(a.ctx, "download:quality-warning", map[string]interface{}{
 			"method": dlResult.Method,
 			"width":  dlResult.Width,
 			"height": dlResult.Height,
+			"reason": reason,
 		})
 	}
 
 	// Set up video server
-	a.currentVideoID = info.ID
 	a.videoServer.SetCurrentVideo(dlResult.FilePath, info.ID)
 
 	runtime.EventsEmit(a.ctx, "download:complete", nil)
 
 	return &VideoInfo{
-		ID:           info.ID,
-		Title:        info.Title,
-		Author:       info.Author,
-		Duration:     info.Duration,
-		Thumbnail:    info.Thumbnail,
-		VideoURL:     a.previewBaseURL + a.videoServer.GetCurrentVideoURL(),
-		SourceWidth:  info.SourceWidth,
-		SourceHeight: info.SourceHeight,
+		ID:             info.ID,
+		Title:          info.Title,
+		Author:         info.Author,
+		Duration:       info.Duration,
+		Thumbnail:      info.Thumbnail,
+		VideoURL:       a.previewBaseURL + a.videoServer.GetCurrentVideoURL(),
+		SourceWidth:    info.SourceWidth,
+		SourceHeight:   info.SourceHeight,
+		PreviewWidth:   dlResult.Width,
+		PreviewHeight:  dlResult.Height,
+		DownloadMethod: dlResult.Method,
 	}, nil
-}
-
-// GetVideoInfo gets video metadata without downloading
-func (a *App) GetVideoInfo(url string) (*youtube.VideoInfo, error) {
-	return a.downloader.GetVideoInfo(a.ctx, url)
 }
 
 // SelectOutputDirectory opens a native directory picker
@@ -228,8 +254,12 @@ func sanitizeFilename(name string) string {
 
 // ExportClip trims and saves a video clip
 func (a *App) ExportClip(opts ExportOptions) error {
-	if a.ffmpegInstaller == nil || !a.ffmpegInstaller.IsInstalled() {
-		return fmt.Errorf("FFmpeg is not installed")
+	if a.toolchain == nil {
+		return fmt.Errorf("self-contained toolchain is not available")
+	}
+	paths, _, err := a.toolchain.Ensure(a.ctx)
+	if err != nil {
+		return fmt.Errorf("verify media toolchain: %w", err)
 	}
 
 	// Get current video path from server
@@ -253,7 +283,7 @@ func (a *App) ExportClip(opts ExportOptions) error {
 	outputPath := filepath.Join(opts.OutputDir, outputName)
 
 	// Create processor
-	processor := ffmpeg.NewProcessor(a.ffmpegInstaller.GetFFmpegPath())
+	processor := ffmpeg.NewProcessor(paths.FFmpeg)
 
 	trimOpts := ffmpeg.TrimOptions{
 		InputPath:   inputPath,
@@ -294,7 +324,7 @@ func (a *App) ExportClip(opts ExportOptions) error {
 	}
 
 	// Export with progress
-	err := processor.TrimVideoWithProgress(a.ctx, trimOpts, func(progress float64) {
+	err = processor.TrimVideoWithProgress(a.ctx, trimOpts, func(progress float64) {
 		runtime.EventsEmit(a.ctx, "export:progress", progress)
 	})
 
@@ -306,29 +336,82 @@ func (a *App) ExportClip(opts ExportOptions) error {
 	return nil
 }
 
-// CheckFFmpeg checks if FFmpeg is installed
-func (a *App) CheckFFmpeg() bool {
-	if a.ffmpegInstaller == nil {
+// CheckToolchain verifies the included app-owned tools.
+func (a *App) CheckToolchain() bool {
+	if a.toolchain == nil {
 		return false
 	}
-	return a.ffmpegInstaller.IsInstalled()
+	_, _, err := a.toolchain.Ensure(a.ctx)
+	return err == nil
 }
 
-// InstallFFmpeg downloads and installs FFmpeg
-func (a *App) InstallFFmpeg() error {
-	if a.ffmpegInstaller == nil {
-		return fmt.Errorf("FFmpeg installer not initialized")
+// CancelLoad cancels the active metadata or preview download.
+func (a *App) CancelLoad() {
+	a.loadMu.Lock()
+	defer a.loadMu.Unlock()
+	if a.loadCancel != nil {
+		a.loadCancel()
+		a.loadCancel = nil
 	}
-
-	return a.ffmpegInstaller.Install(a.ctx, func(progress float64, status string) {
-		runtime.EventsEmit(a.ctx, "ffmpeg:progress", map[string]interface{}{
-			"progress": progress,
-			"status":   status,
-		})
-	})
 }
 
-// GetVideoServer returns the video server for use as HTTP handler
-func (a *App) GetVideoServer() *video.Server {
+// GetDiagnostics returns recent log output for a bug report.
+func (a *App) GetDiagnostics() (string, error) {
+	if a.logger == nil {
+		return "Diagnostic logging is unavailable.", nil
+	}
+	snapshot, err := a.logger.Snapshot()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("YT Downloader diagnostics\nLog file: %s\n\n%s", a.logger.Path(), snapshot), nil
+}
+
+func (a *App) videoHandler() *video.Server {
 	return a.videoServer
+}
+
+func (a *App) beginLoad() (context.Context, uint64) {
+	a.loadMu.Lock()
+	defer a.loadMu.Unlock()
+	if a.loadCancel != nil {
+		a.loadCancel()
+	}
+	a.loadGeneration++
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.loadCancel = cancel
+	return ctx, a.loadGeneration
+}
+
+func (a *App) finishLoad(generation uint64) {
+	a.loadMu.Lock()
+	defer a.loadMu.Unlock()
+	if a.loadGeneration == generation {
+		a.loadCancel = nil
+	}
+}
+
+func (a *App) refreshToolchain(ctx context.Context) {
+	paths, versions, err := a.toolchain.Ensure(ctx)
+	if err != nil {
+		a.logf("Toolchain verification failed error=%v", err)
+		runtime.EventsEmit(a.ctx, "toolchain:error", err.Error())
+		return
+	}
+	a.logf("Toolchain ready baseline=%s yt-dlp=%s root=%s", versions.Baseline, versions.YTDLP, filepath.Dir(paths.YTDLP))
+	updated, updatedVersions, err := a.toolchain.CheckForYTDLPUpdate(ctx, false)
+	if err != nil {
+		a.logf("Background yt-dlp update check failed error=%v", err)
+		return
+	}
+	if updated {
+		a.logf("Background yt-dlp update activated version=%s", updatedVersions.YTDLP)
+		runtime.EventsEmit(a.ctx, "toolchain:updated", updatedVersions.YTDLP)
+	}
+}
+
+func (a *App) logf(format string, args ...any) {
+	if a.logger != nil {
+		a.logger.Printf(format, args...)
+	}
 }

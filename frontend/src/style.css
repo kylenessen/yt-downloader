@@ -285,7 +285,8 @@ h1 {
 }
 
 .layout.sidebar-collapsed .sidebar-title,
-.layout.sidebar-collapsed .theme-toggle {
+.layout.sidebar-collapsed .theme-toggle,
+.layout.sidebar-collapsed .diagnostics-btn {
     display: none;
 }
 
@@ -361,6 +362,20 @@ h1 {
 
 .btn-secondary:hover:not(:disabled) {
     background: var(--btn-secondary-hover-bg);
+}
+
+.cancel-load {
+    display: none;
+}
+
+.cancel-load.visible {
+    display: inline-flex;
+}
+
+.diagnostics-btn {
+    padding: 7px 10px;
+    font-size: 11px;
+    line-height: 1;
 }
 
 /* Progress Bar */
@@ -772,7 +787,7 @@ video {
     font-size: 13px;
 }
 
-/* FFmpeg Install Banner */
+/* Included Toolchain Error Banner */
 .ffmpeg-banner {
     display: none;
     background: rgba(251, 191, 36, 0.1);

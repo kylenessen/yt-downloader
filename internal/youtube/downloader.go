@@ -1,651 +1,542 @@
 package youtube
 
 import (
-	"context"
+	"bufio"
 	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 
-	"github.com/kkdai/youtube/v2"
+	"yt-downloader/internal/toolchain"
 )
 
-// VideoInfo holds metadata about a YouTube video
+const (
+	highQualitySelector = "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[vcodec^=avc1]+bestaudio/bestvideo+bestaudio"
+	progressiveSelector = "best[ext=mp4][vcodec^=avc1]/best[ext=mp4]/best"
+)
+
+var progressPattern = regexp.MustCompile(`([0-9]+(?:\.[0-9]+)?)%`)
+
+// VideoInfo holds metadata reported by yt-dlp.
 type VideoInfo struct {
 	ID           string  `json:"id"`
 	Title        string  `json:"title"`
 	Author       string  `json:"author"`
-	Duration     float64 `json:"duration"` // in seconds
+	Duration     float64 `json:"duration"`
 	Thumbnail    string  `json:"thumbnail"`
 	Description  string  `json:"description"`
 	SourceWidth  int     `json:"sourceWidth"`
 	SourceHeight int     `json:"sourceHeight"`
 }
 
-// DownloadResult holds the download outcome with quality metadata
-type DownloadResult struct {
-	FilePath string `json:"filePath"`
-	Method   string `json:"method"`   // "yt-dlp", "mux", "progressive"
-	Width    int    `json:"width"`
-	Height   int    `json:"height"`
+// DownloadAttempt records one internal attempt for diagnostics and UI status.
+type DownloadAttempt struct {
+	Method       string `json:"method"`
+	YTDLPVersion string `json:"ytDlpVersion"`
+	Error        string `json:"error,omitempty"`
 }
 
-// ProgressCallback is called with download progress (0.0 to 1.0)
+// DownloadResult holds the preview download outcome.
+type DownloadResult struct {
+	FilePath string            `json:"filePath"`
+	Method   string            `json:"method"`
+	Width    int               `json:"width"`
+	Height   int               `json:"height"`
+	Attempts []DownloadAttempt `json:"attempts"`
+}
+
+// ProgressCallback is called with download progress from 0 to 1.
 type ProgressCallback func(progress float64)
 
-// Downloader handles YouTube video operations
+// Toolchain is the subset of the app-owned manager used by Downloader.
+type Toolchain interface {
+	Ensure(ctx context.Context) (toolchain.Paths, toolchain.Versions, error)
+	CheckForYTDLPUpdate(ctx context.Context, force bool) (bool, toolchain.Versions, error)
+	RollbackYTDLP(ctx context.Context) (bool, error)
+}
+
+// Downloader delegates all YouTube-specific behavior to yt-dlp.
 type Downloader struct {
-	client *youtube.Client
+	tools Toolchain
+	logf  func(format string, args ...any)
 }
 
-// NewDownloader creates a new YouTube downloader
-func NewDownloader() *Downloader {
-	return &Downloader{
-		client: &youtube.Client{},
+// NewDownloader creates a yt-dlp adapter.
+func NewDownloader(tools Toolchain, logf func(format string, args ...any)) *Downloader {
+	if logf == nil {
+		logf = func(string, ...any) {}
 	}
+	return &Downloader{tools: tools, logf: logf}
 }
 
-// ExtractVideoID extracts the video ID from a YouTube URL
-func ExtractVideoID(url string) (string, error) {
-	patterns := []string{
-		`(?:v=|\/v\/|youtu\.be\/|\/embed\/|\/shorts\/)([a-zA-Z0-9_-]{11})`,
-		`^([a-zA-Z0-9_-]{11})$`,
-	}
-
-	for _, pattern := range patterns {
-		re := regexp.MustCompile(pattern)
-		matches := re.FindStringSubmatch(url)
-		if len(matches) > 1 {
-			return matches[1], nil
-		}
-	}
-
-	return "", fmt.Errorf("could not extract video ID from URL: %s", url)
-}
-
-// GetVideoInfo fetches metadata for a YouTube video without downloading
+// GetVideoInfo fetches metadata and refreshes yt-dlp once if extraction fails.
 func (d *Downloader) GetVideoInfo(ctx context.Context, url string) (*VideoInfo, error) {
-	videoID, err := ExtractVideoID(url)
+	paths, versions, err := d.tools.Ensure(ctx)
 	if err != nil {
 		return nil, err
 	}
+	info, stderr, err := d.getVideoInfo(ctx, paths, url)
+	if err == nil {
+		d.logf("Metadata loaded id=%s yt-dlp=%s source=%dx%d", info.ID, versions.YTDLP, info.SourceWidth, info.SourceHeight)
+		return info, nil
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	d.logf("Metadata extraction failed yt-dlp=%s error=%v output=%s", versions.YTDLP, err, stderr)
 
-	video, err := d.client.GetVideoContext(ctx, videoID)
+	updated, updateVersions, updateErr := d.tools.CheckForYTDLPUpdate(ctx, true)
+	if updateErr != nil {
+		d.logf("yt-dlp recovery update failed error=%v", updateErr)
+		return nil, fmt.Errorf("yt-dlp metadata error: %w; update failed: %v", err, updateErr)
+	}
+	if !updated {
+		return nil, fmt.Errorf("yt-dlp metadata error: %w: %s", err, stderr)
+	}
+	paths, _, err = d.tools.Ensure(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get video info: %w", err)
+		return nil, err
 	}
-
-	// Get best thumbnail
-	thumbnail := ""
-	if len(video.Thumbnails) > 0 {
-		thumbnail = video.Thumbnails[len(video.Thumbnails)-1].URL
+	info, stderr, err = d.getVideoInfo(ctx, paths, url)
+	if err != nil {
+		return nil, fmt.Errorf("yt-dlp metadata error after update to %s: %w: %s", updateVersions.YTDLP, err, stderr)
 	}
-
-	// Get source resolution from best available format
-	sourceWidth, sourceHeight := 0, 0
-	for _, f := range video.Formats {
-		if f.Width > sourceWidth {
-			sourceWidth = f.Width
-			sourceHeight = f.Height
-		}
-	}
-
-	return &VideoInfo{
-		ID:           video.ID,
-		Title:        sanitizeFilename(video.Title),
-		Author:       video.Author,
-		Duration:     video.Duration.Seconds(),
-		Thumbnail:    thumbnail,
-		Description:  video.Description,
-		SourceWidth:  sourceWidth,
-		SourceHeight: sourceHeight,
-	}, nil
+	d.logf("Metadata recovery succeeded id=%s yt-dlp=%s", info.ID, updateVersions.YTDLP)
+	return info, nil
 }
 
-// DownloadForPreview downloads a video for preview (best quality available)
-func (d *Downloader) DownloadForPreview(ctx context.Context, url string, destDir string, ffmpegPath string, ytdlpPath string, progressCb ProgressCallback) (*DownloadResult, error) {
-	videoID, err := ExtractVideoID(url)
+// DownloadForPreview downloads the best compatible preview. It refreshes
+// yt-dlp before using a progressive fallback.
+func (d *Downloader) DownloadForPreview(ctx context.Context, url string, info *VideoInfo, destDir string, progressCb ProgressCallback) (*DownloadResult, error) {
+	if info == nil || info.ID == "" {
+		return nil, errors.New("video metadata is required")
+	}
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return nil, fmt.Errorf("create preview directory: %w", err)
+	}
+
+	paths, versions, err := d.tools.Ensure(ctx)
 	if err != nil {
 		return nil, err
 	}
+	outPath := filepath.Join(destDir, info.ID+"-preview.mp4")
+	attempts := make([]DownloadAttempt, 0, 4)
 
-	video, err := d.client.GetVideoContext(ctx, videoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get video: %w", err)
+	result, stderr, err := d.download(ctx, paths, url, outPath, highQualitySelector, "yt-dlp", progressCb)
+	attempts = append(attempts, attempt("yt-dlp", versions.YTDLP, err, stderr))
+	if err == nil {
+		result.Attempts = attempts
+		d.logResult(*result)
+		return result, nil
 	}
-
-	baseName := sanitizeFilename(video.Title)
-	outPath := filepath.Join(destDir, baseName+"-preview.mp4")
-
-	// Try yt-dlp first - most reliable for high-quality downloads
-	if ytdlpPath != "" && ffmpegPath != "" {
-		fmt.Printf("[DEBUG] Trying yt-dlp for high-quality download\n")
-		err := d.downloadWithYtdlp(ctx, url, outPath, ffmpegPath, ytdlpPath, progressCb)
-		if err == nil {
-			// Probe the downloaded file for resolution
-			w, h := probeResolution(ffmpegPath, outPath)
-			return &DownloadResult{FilePath: outPath, Method: "yt-dlp", Width: w, Height: h}, nil
-		}
-		fmt.Printf("[DEBUG] yt-dlp failed: %v, falling back to Go library\n", err)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
+	d.logf("High-quality download failed yt-dlp=%s error=%v output=%s", versions.YTDLP, err, stderr)
+	cleanupDownloadArtifacts(destDir, filepath.Base(strings.TrimSuffix(outPath, filepath.Ext(outPath))))
 
-	// If ffmpeg is available, prefer muxing high-quality separate streams (video-only + audio-only).
-	// This makes export quality options meaningful because progressive (audio+video) streams are often capped at 720p or lower.
-	if ffmpegPath != "" {
-		v, a := selectMuxFormats(video.Formats)
-		if v != nil && a != nil {
-			fmt.Printf("[DEBUG] Selected video format: %dx%d, mime=%s, bitrate=%d\n", v.Width, v.Height, v.MimeType, v.Bitrate)
-			fmt.Printf("[DEBUG] Selected audio format: mime=%s, bitrate=%d\n", a.MimeType, a.Bitrate)
-			out, muxErr := d.downloadAndMux(ctx, video, v, a, destDir, ffmpegPath, progressCb)
-			if muxErr == nil {
-				return &DownloadResult{FilePath: out, Method: "mux", Width: v.Width, Height: v.Height}, nil
+	updated := false
+	if isRetryableYTDLPError(err, stderr) {
+		var updateErr error
+		updated, versions, updateErr = d.tools.CheckForYTDLPUpdate(ctx, true)
+		if updateErr != nil {
+			attempts = append(attempts, DownloadAttempt{Method: "update", YTDLPVersion: versions.YTDLP, Error: updateErr.Error()})
+			d.logf("yt-dlp recovery update failed error=%v", updateErr)
+		} else if updated {
+			paths, versions, err = d.tools.Ensure(ctx)
+			if err != nil {
+				return nil, err
 			}
-			fmt.Printf("[DEBUG] Mux failed: %v, falling back to progressive stream\n", muxErr)
-			// Fall back to single-stream download if mux fails for any reason.
-		} else {
-			fmt.Printf("[DEBUG] No suitable mux formats found (video=%v, audio=%v)\n", v != nil, a != nil)
-		}
-	}
-
-	// Find best available progressive format (has both audio+video in one stream).
-	// YouTube caps these at 720p or lower, so this is the worst-case fallback.
-	format := selectFormat(video.Formats)
-	if format == nil {
-		return nil, fmt.Errorf("no suitable video format found")
-	}
-
-	fmt.Printf("[DEBUG] Falling back to progressive stream: %dx%d, mime=%s\n", format.Width, format.Height, format.MimeType)
-
-	// Get the stream
-	stream, contentLength, err := d.client.GetStreamContext(ctx, video, format)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get stream: %w", err)
-	}
-	defer stream.Close()
-
-	// Create destination file
-	ext := extensionFromMimeType(format.MimeType)
-	if ext == "" {
-		ext = ".mp4"
-	}
-	filename := sanitizeFilename(video.Title) + ext
-	destPath := filepath.Join(destDir, filename)
-	file, err := os.Create(destPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create file: %w", err)
-	}
-	defer file.Close()
-
-	// Download with progress tracking
-	if progressCb != nil && contentLength > 0 {
-		reader := &progressReader{
-			reader:        stream,
-			total:         contentLength,
-			progressCb:    progressCb,
-			lastReported:  0,
-			reportedCount: 0,
-		}
-		_, err = io.Copy(file, reader)
-	} else {
-		_, err = io.Copy(file, stream)
-	}
-
-	if err != nil {
-		os.Remove(destPath)
-		return nil, fmt.Errorf("failed to download video: %w", err)
-	}
-
-	result := &DownloadResult{FilePath: destPath, Method: "progressive", Width: format.Width, Height: format.Height}
-
-	// If we couldn't get a Safari/WebKit-friendly MP4 (H.264 + AAC), optionally transcode.
-	if needsSafariTranscode(*format) {
-		if ffmpegPath != "" {
-			previewPath := filepath.Join(destDir, sanitizeFilename(video.Title)+"-preview.mp4")
-			if err := transcodeToMP4(ctx, ffmpegPath, destPath, previewPath); err == nil {
-				_ = os.Remove(destPath)
-				result.FilePath = previewPath
+			result, stderr, err = d.download(ctx, paths, url, outPath, highQualitySelector, "yt-dlp", progressCb)
+			attempts = append(attempts, attempt("yt-dlp-after-update", versions.YTDLP, err, stderr))
+			if err == nil {
+				result.Attempts = attempts
+				d.logResult(*result)
 				return result, nil
 			}
+			d.logf("High-quality retry failed yt-dlp=%s error=%v output=%s", versions.YTDLP, err, stderr)
+			cleanupDownloadArtifacts(destDir, filepath.Base(strings.TrimSuffix(outPath, filepath.Ext(outPath))))
 		}
 	}
 
-	return result, nil
-}
-
-// probeResolution uses ffprobe (or ffmpeg) to get the resolution of a downloaded file
-func probeResolution(ffmpegPath string, filePath string) (int, int) {
-	// ffprobe lives next to ffmpeg
-	dir := filepath.Dir(ffmpegPath)
-	ffprobePath := filepath.Join(dir, "ffprobe")
-	if _, err := os.Stat(ffprobePath); err != nil {
-		// No ffprobe available; try ffmpeg -i as fallback
-		return probeWithFFmpeg(ffmpegPath, filePath)
+	result, fallbackOutput, fallbackErr := d.download(ctx, paths, url, outPath, progressiveSelector, "progressive", progressCb)
+	attempts = append(attempts, attempt("progressive", versions.YTDLP, fallbackErr, fallbackOutput))
+	if fallbackErr == nil {
+		result.Attempts = attempts
+		d.logResult(*result)
+		return result, nil
 	}
-	cmd := exec.Command(ffprobePath, "-v", "error", "-select_streams", "v:0",
-		"-show_entries", "stream=width,height", "-of", "csv=p=0:s=x", filePath)
-	out, err := cmd.Output()
-	if err != nil {
-		return 0, 0
-	}
-	return parseWxH(strings.TrimSpace(string(out)))
-}
-
-func probeWithFFmpeg(ffmpegPath string, filePath string) (int, int) {
-	cmd := exec.Command(ffmpegPath, "-i", filePath, "-hide_banner")
-	// ffmpeg -i writes to stderr
-	out, _ := cmd.CombinedOutput()
-	// Look for "1920x1080" pattern in output
-	re := regexp.MustCompile(`(\d{2,5})x(\d{2,5})`)
-	matches := re.FindStringSubmatch(string(out))
-	if len(matches) == 3 {
-		return parseWxH(matches[1] + "x" + matches[2])
-	}
-	return 0, 0
-}
-
-func parseWxH(s string) (int, int) {
-	parts := strings.SplitN(s, "x", 2)
-	if len(parts) != 2 {
-		return 0, 0
-	}
-	w := 0
-	h := 0
-	fmt.Sscanf(parts[0], "%d", &w)
-	fmt.Sscanf(parts[1], "%d", &h)
-	return w, h
-}
-
-// downloadWithYtdlp uses yt-dlp for reliable high-quality downloads
-func (d *Downloader) downloadWithYtdlp(ctx context.Context, url string, outPath string, ffmpegPath string, ytdlpPath string, progressCb ProgressCallback) error {
-	// Download best H.264 video + AAC audio for Safari/WebKit compatibility
-	// Prefer H.264 (avc1) which Safari can play natively without re-encoding
-	args := []string{
-		"-f", "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo[vcodec^=avc1]+bestaudio/best[vcodec^=avc1]/bestvideo+bestaudio/best",
-		"--merge-output-format", "mp4",
-		"--ffmpeg-location", filepath.Dir(ffmpegPath),
-		"-o", outPath,
-		"--no-playlist",
-		"--no-warnings",
-		url,
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
 
-	cmd := exec.CommandContext(ctx, ytdlpPath, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	// Report some progress (yt-dlp progress is hard to parse, so we fake it)
-	if progressCb != nil {
-		progressCb(0.1)
-	}
-
-	err := cmd.Run()
-
-	if progressCb != nil {
-		progressCb(1.0)
-	}
-
-	if err != nil {
-		return fmt.Errorf("yt-dlp error: %w: %s", err, stderr.String())
-	}
-
-	// Verify output exists
-	if _, err := os.Stat(outPath); os.IsNotExist(err) {
-		return fmt.Errorf("output file not created")
-	}
-
-	return nil
-}
-
-func weightedProgress(parent ProgressCallback, base float64, weight float64) ProgressCallback {
-	return func(p float64) {
-		if parent == nil {
-			return
-		}
-		if p < 0 {
-			p = 0
-		}
-		if p > 1 {
-			p = 1
-		}
-		parent(base + p*weight)
-	}
-}
-
-func (d *Downloader) downloadToFile(ctx context.Context, video *youtube.Video, format *youtube.Format, destPath string, progressCb ProgressCallback) error {
-	stream, contentLength, err := d.client.GetStreamContext(ctx, video, format)
-	if err != nil {
-		return fmt.Errorf("failed to get stream: %w", err)
-	}
-	defer stream.Close()
-
-	file, err := os.Create(destPath)
-	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
-	}
-	defer file.Close()
-
-	if progressCb != nil && contentLength > 0 {
-		reader := &progressReader{
-			reader:        stream,
-			total:         contentLength,
-			progressCb:    progressCb,
-			lastReported:  0,
-			reportedCount: 0,
-		}
-		_, err = io.Copy(file, reader)
-	} else {
-		_, err = io.Copy(file, stream)
-	}
-	return err
-}
-
-func (d *Downloader) downloadAndMux(ctx context.Context, video *youtube.Video, videoFmt *youtube.Format, audioFmt *youtube.Format, destDir string, ffmpegPath string, progressCb ProgressCallback) (string, error) {
-	videoExt := extensionFromMimeType(videoFmt.MimeType)
-	if videoExt == "" {
-		videoExt = ".mp4"
-	}
-	audioExt := extensionFromMimeType(audioFmt.MimeType)
-	if audioExt == "" {
-		// audio/mp4 is typically .m4a
-		if strings.Contains(audioFmt.MimeType, "audio/mp4") {
-			audioExt = ".m4a"
-		} else {
-			audioExt = ".webm"
-		}
-	}
-
-	baseName := sanitizeFilename(video.Title)
-	videoPath := filepath.Join(destDir, baseName+"-video"+videoExt)
-	audioPath := filepath.Join(destDir, baseName+"-audio"+audioExt)
-	outPath := filepath.Join(destDir, baseName+"-preview.mp4")
-
-	// 0-0.75 video, 0.75-0.95 audio, 0.95-1.0 mux
-	if err := d.downloadToFile(ctx, video, videoFmt, videoPath, weightedProgress(progressCb, 0.0, 0.75)); err != nil {
-		_ = os.Remove(videoPath)
-		return "", fmt.Errorf("failed to download video stream: %w", err)
-	}
-	if err := d.downloadToFile(ctx, video, audioFmt, audioPath, weightedProgress(progressCb, 0.75, 0.20)); err != nil {
-		_ = os.Remove(videoPath)
-		_ = os.Remove(audioPath)
-		return "", fmt.Errorf("failed to download audio stream: %w", err)
-	}
-
-	// Determine if we need to transcode video (VP9/AV1 needs conversion to H.264 for Safari/WebKit)
-	needsVideoTranscode := strings.Contains(videoFmt.MimeType, "vp9") || strings.Contains(videoFmt.MimeType, "vp09") ||
-		strings.Contains(videoFmt.MimeType, "av01") || strings.Contains(videoFmt.MimeType, "webm")
-	needsAudioTranscode := strings.Contains(audioFmt.MimeType, "opus") || strings.Contains(audioFmt.MimeType, "webm")
-
-	var args []string
-	args = append(args, "-y", "-hide_banner", "-loglevel", "error")
-	args = append(args, "-i", videoPath, "-i", audioPath)
-	args = append(args, "-map", "0:v:0", "-map", "1:a:0")
-
-	if needsVideoTranscode {
-		// Transcode to H.264 with high quality settings
-		args = append(args, "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p")
-	} else {
-		args = append(args, "-c:v", "copy")
-	}
-
-	if needsAudioTranscode {
-		args = append(args, "-c:a", "aac", "-b:a", "192k")
-	} else {
-		args = append(args, "-c:a", "copy")
-	}
-
-	args = append(args, "-movflags", "+faststart", "-shortest", outPath)
-
-	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
-	var stderr bytes.Buffer
-	cmd.Stdout = nil
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		_ = os.Remove(videoPath)
-		_ = os.Remove(audioPath)
-		_ = os.Remove(outPath)
-		if msg == "" {
-			return "", err
-		}
-		return "", fmt.Errorf("%w: %s", err, msg)
-	}
-
-	_ = os.Remove(videoPath)
-	_ = os.Remove(audioPath)
-	if progressCb != nil {
-		progressCb(1.0)
-	}
-	return outPath, nil
-}
-
-// selectFormat picks the best format for preview (720p with audio preferred)
-func selectFormat(formats youtube.FormatList) *youtube.Format {
-	// Prefer MP4 container with H.264 + AAC (most compatible with WebKit/Safari).
-	var mp4H264 []youtube.Format
-	var mp4Any []youtube.Format
-	var withAudio []youtube.Format
-	for _, f := range formats {
-		if f.AudioChannels > 0 && strings.Contains(f.MimeType, "video") {
-			withAudio = append(withAudio, f)
-			if strings.Contains(f.MimeType, "video/mp4") {
-				mp4Any = append(mp4Any, f)
-				if strings.Contains(f.MimeType, "avc1") && strings.Contains(f.MimeType, "mp4a") {
-					mp4H264 = append(mp4H264, f)
+	if updated {
+		if rolledBack, rollbackErr := d.tools.RollbackYTDLP(ctx); rollbackErr != nil {
+			d.logf("yt-dlp rollback failed error=%v", rollbackErr)
+		} else if rolledBack {
+			paths, versions, err = d.tools.Ensure(ctx)
+			if err == nil {
+				cleanupDownloadArtifacts(destDir, filepath.Base(strings.TrimSuffix(outPath, filepath.Ext(outPath))))
+				result, fallbackOutput, fallbackErr = d.download(ctx, paths, url, outPath, progressiveSelector, "progressive", progressCb)
+				attempts = append(attempts, attempt("progressive-after-rollback", versions.YTDLP, fallbackErr, fallbackOutput))
+				if fallbackErr == nil {
+					result.Attempts = attempts
+					d.logResult(*result)
+					return result, nil
 				}
 			}
 		}
 	}
 
-	if best := pickBestWithAudio(mp4H264); best != nil {
-		return best
-	}
-
-	if best := pickBestWithAudio(mp4Any); best != nil {
-		return best
-	}
-
-	if best := pickBestWithAudio(withAudio); best != nil {
-		return best
-	}
-
-	// Last resort: any video format
-	for _, f := range formats {
-		if strings.Contains(f.MimeType, "video") {
-			return &f
-		}
-	}
-
-	return nil
+	return nil, fmt.Errorf("high-quality and progressive downloads failed: %w: %s", fallbackErr, fallbackOutput)
 }
 
-func selectMuxFormats(formats youtube.FormatList) (*youtube.Format, *youtube.Format) {
-	// Video-only: prefer highest resolution, accepting MP4/H.264, WebM/VP9, or MP4/AV1.
-	// Modern YouTube often serves highest quality in VP9 or AV1 rather than H.264.
-	var videoOnly []youtube.Format
-	for _, f := range formats {
-		if f.AudioChannels != 0 {
-			continue
-		}
-		if !strings.Contains(f.MimeType, "video") {
-			continue
-		}
-		// Accept mp4 (avc1/av01) or webm (vp9)
-		isMP4 := strings.Contains(f.MimeType, "video/mp4")
-		isWebM := strings.Contains(f.MimeType, "video/webm")
-		if !isMP4 && !isWebM {
-			continue
-		}
-		videoOnly = append(videoOnly, f)
+func (d *Downloader) getVideoInfo(ctx context.Context, paths toolchain.Paths, url string) (*VideoInfo, string, error) {
+	args := []string{
+		"--ignore-config",
+		"--no-playlist",
+		"--no-color",
+		"--dump-single-json",
+		"--skip-download",
+		"--ffmpeg-location", filepath.Dir(paths.FFmpeg),
+		"--js-runtimes", "deno:" + paths.Deno,
+		"--", url,
+	}
+	cmd := exec.CommandContext(ctx, paths.YTDLP, args...)
+	var stdout bytes.Buffer
+	stderr := &limitedBuffer{limit: 128 * 1024}
+	cmd.Stdout = &stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return nil, strings.TrimSpace(stderr.String()), fmt.Errorf("run yt-dlp metadata: %w", err)
 	}
 
-	// Audio-only: prefer MP4/AAC (mp4a), fall back to WebM/Opus if needed.
-	var audioOnly []youtube.Format
-	for _, f := range formats {
-		if f.AudioChannels <= 0 {
-			continue
-		}
-		if !strings.Contains(f.MimeType, "audio") {
-			continue
-		}
-		// Accept mp4 audio or webm audio
-		isMP4 := strings.Contains(f.MimeType, "audio/mp4")
-		isWebM := strings.Contains(f.MimeType, "audio/webm")
-		if !isMP4 && !isWebM {
-			continue
-		}
-		audioOnly = append(audioOnly, f)
+	var raw struct {
+		ID          string  `json:"id"`
+		Title       string  `json:"title"`
+		Channel     string  `json:"channel"`
+		Uploader    string  `json:"uploader"`
+		Duration    float64 `json:"duration"`
+		Thumbnail   string  `json:"thumbnail"`
+		Description string  `json:"description"`
+		Width       int     `json:"width"`
+		Height      int     `json:"height"`
+		Thumbnails  []struct {
+			URL string `json:"url"`
+		} `json:"thumbnails"`
+		Formats []struct {
+			Width  int `json:"width"`
+			Height int `json:"height"`
+		} `json:"formats"`
 	}
-
-	bestVideo := pickBestVideoOnly(videoOnly)
-	bestAudio := pickBestAudioOnly(audioOnly)
-	return bestVideo, bestAudio
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		return nil, strings.TrimSpace(stderr.String()), fmt.Errorf("parse yt-dlp metadata: %w", err)
+	}
+	if raw.ID == "" || raw.Title == "" {
+		return nil, strings.TrimSpace(stderr.String()), errors.New("yt-dlp returned incomplete metadata")
+	}
+	width, height := raw.Width, raw.Height
+	for _, format := range raw.Formats {
+		if format.Height > height || format.Height == height && format.Width > width {
+			width, height = format.Width, format.Height
+		}
+	}
+	thumbnail := raw.Thumbnail
+	if thumbnail == "" && len(raw.Thumbnails) > 0 {
+		thumbnail = raw.Thumbnails[len(raw.Thumbnails)-1].URL
+	}
+	author := raw.Channel
+	if author == "" {
+		author = raw.Uploader
+	}
+	return &VideoInfo{
+		ID:           raw.ID,
+		Title:        sanitizeFilename(raw.Title),
+		Author:       author,
+		Duration:     raw.Duration,
+		Thumbnail:    thumbnail,
+		Description:  raw.Description,
+		SourceWidth:  width,
+		SourceHeight: height,
+	}, strings.TrimSpace(stderr.String()), nil
 }
 
-func pickBestVideoOnly(formats []youtube.Format) *youtube.Format {
-	if len(formats) == 0 {
-		return nil
+func (d *Downloader) download(ctx context.Context, paths toolchain.Paths, url, outPath, selector, method string, progressCb ProgressCallback) (*DownloadResult, string, error) {
+	_ = os.Remove(outPath)
+	args := []string{
+		"--ignore-config",
+		"--no-playlist",
+		"--newline",
+		"--no-color",
+		"--progress",
+		"--progress-template", "download:YT_PROGRESS:%(progress._percent_str)s",
+		"--ffmpeg-location", filepath.Dir(paths.FFmpeg),
+		"--js-runtimes", "deno:" + paths.Deno,
+		"-f", selector,
+		"--merge-output-format", "mp4",
+		"--recode-video", "mp4",
+		"-o", outPath,
+		"--", url,
 	}
-	bestIdx := 0
-	for i := 1; i < len(formats); i++ {
-		f := formats[i]
-		best := formats[bestIdx]
-		if f.Height > best.Height {
-			bestIdx = i
+	cmd := exec.CommandContext(ctx, paths.YTDLP, args...)
+	output, err := runWithProgress(cmd, progressCb)
+	if err != nil {
+		return nil, output, fmt.Errorf("run yt-dlp download: %w", err)
+	}
+	info, err := os.Stat(outPath)
+	if err != nil || info.Size() == 0 {
+		return nil, output, errors.New("yt-dlp did not create a preview file")
+	}
+	width, height, err := probeResolution(ctx, paths.FFprobe, outPath)
+	if err != nil {
+		d.logf("Preview resolution probe failed path=%s error=%v", filepath.Base(outPath), err)
+	}
+	return &DownloadResult{FilePath: outPath, Method: method, Width: width, Height: height}, output, nil
+}
+
+func runWithProgress(cmd *exec.Cmd, callback ProgressCallback) (string, error) {
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", err
+	}
+	collector := &lineCollector{limit: 256 * 1024}
+	reporter := &progressReporter{callback: callback}
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go consumeOutput(stdout, collector, reporter, &wg)
+	go consumeOutput(stderr, collector, reporter, &wg)
+	wg.Wait()
+	waitErr := cmd.Wait()
+	if waitErr == nil {
+		reporter.complete()
+	}
+	return collector.String(), waitErr
+}
+
+func consumeOutput(reader io.Reader, collector *lineCollector, reporter *progressReporter, wg *sync.WaitGroup) {
+	defer wg.Done()
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		collector.Add(line)
+		if strings.Contains(line, "YT_PROGRESS:") {
+			reporter.reportLine(line)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		collector.Add("output read error: " + err.Error())
+	}
+}
+
+type progressReporter struct {
+	mu       sync.Mutex
+	callback ProgressCallback
+	last     float64
+}
+
+func (p *progressReporter) reportLine(line string) {
+	if p.callback == nil {
+		return
+	}
+	match := progressPattern.FindStringSubmatch(line)
+	if len(match) != 2 {
+		return
+	}
+	percent, err := strconv.ParseFloat(match[1], 64)
+	if err != nil {
+		return
+	}
+	progress := percent / 100 * 0.95
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if progress <= p.last {
+		return
+	}
+	p.last = progress
+	p.callback(progress)
+}
+
+func (p *progressReporter) complete() {
+	if p.callback == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.last = 1
+	p.callback(1)
+}
+
+type lineCollector struct {
+	mu    sync.Mutex
+	buf   bytes.Buffer
+	limit int
+}
+
+func (c *lineCollector) Add(line string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.buf.Len() >= c.limit {
+		return
+	}
+	remaining := c.limit - c.buf.Len()
+	if len(line)+1 > remaining {
+		line = line[:max(0, remaining-1)]
+	}
+	_, _ = c.buf.WriteString(line)
+	_ = c.buf.WriteByte('\n')
+}
+
+func (c *lineCollector) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return strings.TrimSpace(c.buf.String())
+}
+
+type limitedBuffer struct {
+	buf   bytes.Buffer
+	limit int
+}
+
+func (l *limitedBuffer) Write(p []byte) (int, error) {
+	remaining := l.limit - l.buf.Len()
+	if remaining > 0 {
+		if len(p) > remaining {
+			_, _ = l.buf.Write(p[:remaining])
+		} else {
+			_, _ = l.buf.Write(p)
+		}
+	}
+	return len(p), nil
+}
+
+func (l *limitedBuffer) String() string {
+	return l.buf.String()
+}
+
+func probeResolution(ctx context.Context, ffprobePath, filePath string) (int, int, error) {
+	output, err := exec.CommandContext(ctx, ffprobePath,
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=width,height",
+		"-of", "csv=p=0:s=x",
+		filePath,
+	).CombinedOutput()
+	if err != nil {
+		return 0, 0, fmt.Errorf("run ffprobe: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	width, height := parseWxH(strings.TrimSpace(string(output)))
+	if width == 0 || height == 0 {
+		return 0, 0, fmt.Errorf("parse ffprobe resolution %q", strings.TrimSpace(string(output)))
+	}
+	return width, height, nil
+}
+
+func parseWxH(value string) (int, int) {
+	parts := strings.SplitN(value, "x", 2)
+	if len(parts) != 2 {
+		return 0, 0
+	}
+	width, widthErr := strconv.Atoi(strings.TrimSpace(parts[0]))
+	height, heightErr := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if widthErr != nil || heightErr != nil {
+		return 0, 0
+	}
+	return width, height
+}
+
+func cleanupDownloadArtifacts(dir, base string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasPrefix(name, base) {
 			continue
 		}
-		if f.Height == best.Height && f.Bitrate > best.Bitrate {
-			bestIdx = i
+		if strings.HasSuffix(name, ".part") || strings.HasSuffix(name, ".ytdl") || strings.Contains(name, ".f") {
+			_ = os.Remove(filepath.Join(dir, name))
 		}
-	}
-	return &formats[bestIdx]
-}
-
-func pickBestAudioOnly(formats []youtube.Format) *youtube.Format {
-	if len(formats) == 0 {
-		return nil
-	}
-	bestIdx := 0
-	for i := 1; i < len(formats); i++ {
-		f := formats[i]
-		best := formats[bestIdx]
-		if f.Bitrate > best.Bitrate {
-			bestIdx = i
-		}
-	}
-	return &formats[bestIdx]
-}
-
-func pickBestWithAudio(formats []youtube.Format) *youtube.Format {
-	if len(formats) == 0 {
-		return nil
-	}
-
-	// Pick the highest resolution available; break ties by bitrate.
-	bestIdx := 0
-	for i := 1; i < len(formats); i++ {
-		f := formats[i]
-		best := formats[bestIdx]
-		if f.Height > best.Height {
-			bestIdx = i
-			continue
-		}
-		if f.Height == best.Height && f.Bitrate > best.Bitrate {
-			bestIdx = i
-		}
-	}
-
-	return &formats[bestIdx]
-}
-
-func extensionFromMimeType(mimeType string) string {
-	switch {
-	case strings.Contains(mimeType, "video/mp4"):
-		return ".mp4"
-	case strings.Contains(mimeType, "video/webm"):
-		return ".webm"
-	default:
-		return ""
 	}
 }
 
-func needsSafariTranscode(f youtube.Format) bool {
-	// If it's a progressive MP4 with H.264 + AAC, we can usually play it directly.
-	if strings.Contains(f.MimeType, "video/mp4") && strings.Contains(f.MimeType, "avc1") && strings.Contains(f.MimeType, "mp4a") {
+func attempt(method, version string, err error, output string) DownloadAttempt {
+	attempt := DownloadAttempt{Method: method, YTDLPVersion: version}
+	if err != nil {
+		message := err.Error()
+		if output != "" {
+			message += ": " + lastLines(output, 8)
+		}
+		attempt.Error = message
+	}
+	return attempt
+}
+
+func isRetryableYTDLPError(err error, output string) bool {
+	if err == nil {
 		return false
 	}
-	return true
-}
-
-func transcodeToMP4(ctx context.Context, ffmpegPath string, inputPath string, outputPath string) error {
-	// H.264 + AAC, yuv420p for broad compatibility; faststart improves seeking.
-	cmd := exec.CommandContext(ctx, ffmpegPath,
-		"-y",
-		"-hide_banner",
-		"-loglevel", "error",
-		"-i", inputPath,
-		"-c:v", "libx264",
-		"-pix_fmt", "yuv420p",
-		"-c:a", "aac",
-		"-movflags", "+faststart",
-		outputPath,
-	)
-	var stderr bytes.Buffer
-	cmd.Stdout = nil
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			return err
-		}
-		return fmt.Errorf("%w: %s", err, msg)
-	}
-	return nil
-}
-
-// progressReader wraps a reader to report progress
-type progressReader struct {
-	reader        io.Reader
-	total         int64
-	read          int64
-	progressCb    ProgressCallback
-	lastReported  float64
-	reportedCount int
-}
-
-func (pr *progressReader) Read(p []byte) (int, error) {
-	n, err := pr.reader.Read(p)
-	pr.read += int64(n)
-
-	if pr.progressCb != nil && pr.total > 0 {
-		progress := float64(pr.read) / float64(pr.total)
-		// Only report every 1% change to avoid flooding
-		if progress-pr.lastReported >= 0.01 || progress >= 1.0 {
-			pr.progressCb(progress)
-			pr.lastReported = progress
+	message := strings.ToLower(err.Error() + " " + output)
+	for _, marker := range []string{
+		"http error 403",
+		"forbidden",
+		"extractor",
+		"signature",
+		"challenge",
+		"requested format is not available",
+		"unable to download",
+		"unsupported url",
+	} {
+		if strings.Contains(message, marker) {
+			return true
 		}
 	}
-
-	return n, err
+	return false
 }
 
-// sanitizeFilename removes or replaces invalid characters for filenames
+func lastLines(value string, count int) string {
+	lines := strings.Split(strings.TrimSpace(value), "\n")
+	if len(lines) > count {
+		lines = lines[len(lines)-count:]
+	}
+	return strings.Join(lines, " | ")
+}
+
 func sanitizeFilename(name string) string {
-	// Replace invalid characters
-	invalid := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|"}
-	result := name
-	for _, char := range invalid {
-		result = strings.ReplaceAll(result, char, "_")
+	name = strings.TrimSpace(name)
+	name = strings.Map(func(r rune) rune {
+		switch r {
+		case '/', '\\', 0:
+			return '_'
+		default:
+			return r
+		}
+	}, name)
+	name = strings.Trim(name, ". ")
+	if len(name) > 120 {
+		name = name[:120]
 	}
-	// Trim spaces and dots from ends
-	result = strings.TrimSpace(result)
-	result = strings.Trim(result, ".")
-	// Limit length
-	if len(result) > 200 {
-		result = result[:200]
-	}
-	return result
+	return name
+}
+
+func (d *Downloader) logResult(result DownloadResult) {
+	d.logf("Preview ready method=%s resolution=%dx%d file=%s attempts=%d", result.Method, result.Width, result.Height, filepath.Base(result.FilePath), len(result.Attempts))
 }
